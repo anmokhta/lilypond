@@ -5,9 +5,10 @@ from __future__ import annotations
 import functools
 import inspect
 import time
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
 from mcp.server.mcpserver import MCPServer
+from pydantic import Field
 
 try:
     from mcp_types import ToolAnnotations
@@ -27,7 +28,10 @@ mcp = MCPServer(
         "apply (dry_run=false) without showing the preview and getting explicit user "
         "confirmation. Deletes also require confirm_title/confirm_name matching the "
         "current value. Tool categories are prefixed in descriptions: [read], "
-        "[create], [update], [delete]."
+        "[create], [update], [delete]. Read-only Resources mirror discovery data "
+        "(koillection://collections, /templates, /tags, /call-history). Prompts "
+        "setup_collection, populate_from_list, review_collection, and "
+        "have_vs_want_summary drive the standard workflows."
     ),
 )
 
@@ -103,7 +107,7 @@ def tool(category: str) -> Callable:
     return decorator
 
 
-def _id_or_iri(value: str, resource: str) -> str:
+def _id_or_iri(value: Annotated[str, Field(description="Value as a string. Checkbox uses '0' or '1'; dates use YYYY-MM-DD; lists use a JSON string.")], resource: str) -> str:
     """Accept a UUID, IRI path, or URL; return an API path."""
     value = value.strip()
     if value.startswith("/api/"):
@@ -113,7 +117,7 @@ def _id_or_iri(value: str, resource: str) -> str:
     return f"/api/{resource}/{value}"
 
 
-def _iri(value: str, resource: str) -> str:
+def _iri(value: Annotated[str, Field(description="Value as a string. Checkbox uses '0' or '1'; dates use YYYY-MM-DD; lists use a JSON string.")], resource: str) -> str:
     """Normalize any id form to a canonical IRI path for payloads."""
     path = _id_or_iri(value, resource)
     if path.startswith("http"):
@@ -216,7 +220,10 @@ _TAG_WRITE_KEYS = ["label", "description", "category", "visibility"]
 
 @tool("read")
 def health_check() -> str:
-    """Check whether the Koillection base URL is reachable and credentials work."""
+    """Check whether the Koillection base URL is reachable and credentials work.
+
+    Args:
+    """
     try:
         return dumps(get_client().health())
     except Exception as exc:  # noqa: BLE001
@@ -225,7 +232,10 @@ def health_check() -> str:
 
 @tool("read")
 def whoami() -> str:
-    """Return which Koillection user the configured JWT belongs to."""
+    """Return which Koillection user the configured JWT belongs to.
+
+    Args:
+    """
     try:
         return dumps(get_client().whoami())
     except KoillectionError as exc:
@@ -233,14 +243,21 @@ def whoami() -> str:
 
 
 @tool("read")
-def get_call_history(limit: int = 50) -> str:
-    """Return recent MCP call-history records (JSONL log, newest last)."""
+def get_call_history(limit: Annotated[int, Field(description='Maximum number of entries to return.')] = 50) -> str:
+    """Return recent MCP call-history records (JSONL log, newest last).
+
+    Args:
+        limit: Maximum number of entries to return.
+    """
     return dumps(history.read_history(limit))
 
 
 @tool("read")
 def list_collections() -> str:
-    """List all collections visible to the logged-in user (summaries)."""
+    """List all collections visible to the logged-in user (summaries).
+
+    Args:
+    """
     try:
         cols = get_client().get_all_members("/api/collections")
         return dumps([_summarize_collection(c) for c in cols])
@@ -249,8 +266,12 @@ def list_collections() -> str:
 
 
 @tool("read")
-def get_collection(collection_id: str) -> str:
-    """Get one collection by UUID or IRI, including child collection summaries."""
+def get_collection(collection_id: Annotated[str, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')]) -> str:
+    """Get one collection by UUID or IRI, including child collection summaries.
+
+    Args:
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+    """
     try:
         client = get_client()
         path = _id_or_iri(collection_id, "collections")
@@ -269,7 +290,10 @@ def get_collection(collection_id: str) -> str:
 
 @tool("read")
 def list_templates() -> str:
-    """List item templates."""
+    """List item templates.
+
+    Args:
+    """
     try:
         templates = get_client().get_all_members("/api/templates")
         return dumps(
@@ -283,8 +307,12 @@ def list_templates() -> str:
 
 
 @tool("read")
-def list_fields(template_id: str | None = None) -> str:
-    """List fields. If template_id is set, only fields for that template."""
+def list_fields(template_id: Annotated[str | None, Field(description='Template UUID or IRI like /api/templates/<uuid>.')] = None) -> str:
+    """List fields. If template_id is set, only fields for that template.
+
+    Args:
+        template_id: Template UUID or IRI like /api/templates/<uuid>.
+    """
     try:
         client = get_client()
         if template_id:
@@ -311,7 +339,10 @@ def list_fields(template_id: str | None = None) -> str:
 
 @tool("read")
 def list_tags() -> str:
-    """List tags."""
+    """List tags.
+
+    Args:
+    """
     try:
         tags = get_client().get_all_members("/api/tags")
         return dumps(
@@ -331,8 +362,14 @@ def list_tags() -> str:
 
 
 @tool("read")
-def search_items(query: str, collection_id: str | None = None, limit: int = 50) -> str:
-    """Search items by name substring (client-side; API has no search filter)."""
+def search_items(query: Annotated[str, Field(description='Case-insensitive substring matched against item names.')], collection_id: Annotated[str | None, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')] = None, limit: Annotated[int, Field(description='Maximum number of entries to return.')] = 50) -> str:
+    """Search items by name substring (client-side; API has no search filter).
+
+    Args:
+        query: Case-insensitive substring matched against item names.
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+        limit: Maximum number of entries to return.
+    """
     try:
         client = get_client()
         if collection_id:
@@ -360,8 +397,12 @@ def search_items(query: str, collection_id: str | None = None, limit: int = 50) 
 
 
 @tool("read")
-def list_items(collection_id: str) -> str:
-    """List items in a collection (summaries)."""
+def list_items(collection_id: Annotated[str, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')]) -> str:
+    """List items in a collection (summaries).
+
+    Args:
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+    """
     try:
         client = get_client()
         path = _id_or_iri(collection_id, "collections")
@@ -372,8 +413,12 @@ def list_items(collection_id: str) -> str:
 
 
 @tool("read")
-def get_item(item_id: str) -> str:
-    """Get one item by UUID or IRI, including its data fields."""
+def get_item(item_id: Annotated[str, Field(description='Item UUID or IRI like /api/items/<uuid>.')]) -> str:
+    """Get one item by UUID or IRI, including its data fields.
+
+    Args:
+        item_id: Item UUID or IRI like /api/items/<uuid>.
+    """
     try:
         client = get_client()
         path = _id_or_iri(item_id, "items")
@@ -397,14 +442,23 @@ def get_item(item_id: str) -> str:
 
 @tool("create")
 def create_collection(
-    title: str,
-    parent_id: str | None = None,
-    color: str | None = None,
-    visibility: str | None = None,
-    items_default_template_id: str | None = None,
-    dry_run: bool = True,
+    title: Annotated[str, Field(description='Collection title.')],
+    parent_id: Annotated[str | None, Field(description='Parent collection UUID or IRI. Set to create a subcollection under it, or to move a collection.')] = None,
+    color: Annotated[str | None, Field(description="Hex color without '#', e.g. FFCC00.")] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    items_default_template_id: Annotated[str | None, Field(description='Template UUID or IRI like /api/templates/<uuid>.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Create a collection, or a subcollection when parent_id is set."""
+    """Create a collection, or a subcollection when parent_id is set.
+
+    Args:
+        title: Collection title.
+        parent_id: Parent collection UUID or IRI. Set to create a subcollection under it, or to move a collection.
+        color: Hex color without '#', e.g. FFCC00.
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        items_default_template_id: Template UUID or IRI to set as the collection's default items template.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     payload = _clean(
         {
             "title": title,
@@ -428,15 +482,25 @@ def create_collection(
 
 @tool("update")
 def update_collection(
-    collection_id: str,
-    title: str | None = None,
-    color: str | None = None,
-    visibility: str | None = None,
-    parent_id: str | None = None,
-    items_default_template_id: str | None = None,
-    dry_run: bool = True,
+    collection_id: Annotated[str, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')],
+    title: Annotated[str | None, Field(description='Collection title.')] = None,
+    color: Annotated[str | None, Field(description="Hex color without '#', e.g. FFCC00.")] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    parent_id: Annotated[str | None, Field(description='Parent collection UUID or IRI. Set to create a subcollection under it, or to move a collection.')] = None,
+    items_default_template_id: Annotated[str | None, Field(description='Template UUID or IRI like /api/templates/<uuid>.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Update a collection (PUT read-modify-write). Setting parent_id moves it."""
+    """Update a collection (PUT read-modify-write). Setting parent_id moves it.
+
+    Args:
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+        title: Collection title.
+        color: Hex color without '#', e.g. FFCC00.
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        parent_id: Parent collection UUID or IRI. Set to create a subcollection under it, or to move a collection.
+        items_default_template_id: Template UUID or IRI to set as the collection's default items template.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(collection_id, "collections")
@@ -487,8 +551,14 @@ def _collection_tree_stats(client: KoillectionClient, path: str) -> dict[str, An
 
 
 @tool("delete")
-def delete_collection(collection_id: str, confirm_title: str, dry_run: bool = True) -> str:
-    """Delete a collection and everything under it. Requires exact confirm_title."""
+def delete_collection(collection_id: Annotated[str, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')], confirm_title: Annotated[str, Field(description='Must exactly match the current title, or the delete is refused.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Delete a collection and everything under it. Requires exact confirm_title.
+
+    Args:
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+        confirm_title: Must exactly match the current title, or the delete is refused.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(collection_id, "collections")
@@ -519,15 +589,25 @@ def delete_collection(collection_id: str, confirm_title: str, dry_run: bool = Tr
 
 @tool("create")
 def create_item(
-    collection_id: str,
-    name: str,
-    quantity: int | None = None,
-    visibility: str | None = None,
-    tag_ids: list[str] | None = None,
-    data: list[dict[str, Any]] | None = None,
-    dry_run: bool = True,
+    collection_id: Annotated[str, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')],
+    name: Annotated[str, Field(description='Display name.')],
+    quantity: Annotated[int | None, Field(description='How many of this item are owned.')] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    tag_ids: Annotated[list[str] | None, Field(description='Tag UUIDs or IRIs to attach.')] = None,
+    data: Annotated[list[dict[str, Any]] | None, Field(description='List of {label, type, value, position?} entries; one /api/data record is created per entry.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Create an item in a collection, then one data field per `data` entry."""
+    """Create an item in a collection, then one data field per `data` entry.
+
+    Args:
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+        name: Display name.
+        quantity: How many of this item are owned.
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        tag_ids: Tag UUIDs or IRIs to attach.
+        data: List of {label, type, value, position?} entries; one /api/data record is created per entry.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     collection_iri = _iri(collection_id, "collections")
     payload = _clean(
         {
@@ -570,15 +650,25 @@ def create_item(
 
 @tool("update")
 def update_item(
-    item_id: str,
-    name: str | None = None,
-    quantity: int | None = None,
-    visibility: str | None = None,
-    collection_id: str | None = None,
-    tag_ids: list[str] | None = None,
-    dry_run: bool = True,
+    item_id: Annotated[str, Field(description='Item UUID or IRI like /api/items/<uuid>.')],
+    name: Annotated[str | None, Field(description='Display name.')] = None,
+    quantity: Annotated[int | None, Field(description='How many of this item are owned.')] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    collection_id: Annotated[str | None, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')] = None,
+    tag_ids: Annotated[list[str] | None, Field(description='Tag UUIDs or IRIs to attach.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Update an item (PUT read-modify-write). Setting collection_id moves it."""
+    """Update an item (PUT read-modify-write). Setting collection_id moves it.
+
+    Args:
+        item_id: Item UUID or IRI like /api/items/<uuid>.
+        name: Display name.
+        quantity: How many of this item are owned.
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+        tag_ids: Tag UUIDs or IRIs to attach.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(item_id, "items")
@@ -607,8 +697,14 @@ def update_item(
 
 
 @tool("delete")
-def delete_item(item_id: str, confirm_name: str, dry_run: bool = True) -> str:
-    """Delete an item. Requires confirm_name exactly matching the item name."""
+def delete_item(item_id: Annotated[str, Field(description='Item UUID or IRI like /api/items/<uuid>.')], confirm_name: Annotated[str, Field(description='Must exactly match the current name/label, or the delete is refused.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Delete an item. Requires confirm_name exactly matching the item name.
+
+    Args:
+        item_id: Item UUID or IRI like /api/items/<uuid>.
+        confirm_name: Must exactly match the current name/label, or the delete is refused.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(item_id, "items")
@@ -629,15 +725,25 @@ def delete_item(item_id: str, confirm_name: str, dry_run: bool = True) -> str:
 
 @tool("create")
 def set_item_data(
-    item_id: str,
-    label: str,
-    type: str,
-    value: str,
-    position: int | None = None,
-    visibility: str | None = None,
-    dry_run: bool = True,
+    item_id: Annotated[str, Field(description='Item UUID or IRI like /api/items/<uuid>.')],
+    label: Annotated[str, Field(description='Data/tag label. For item data this is the field label, matched exactly.')],
+    type: Annotated[str, Field(description='Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.')],
+    value: Annotated[str, Field(description="Value as a string. Checkbox uses '0' or '1'; dates use YYYY-MM-DD; lists use a JSON string.")],
+    position: Annotated[int | None, Field(description='Sort position within the template/item (lower first).')] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Create or update one data field on an item, matched by label (upsert)."""
+    """Create or update one data field on an item, matched by label (upsert).
+
+    Args:
+        item_id: Item UUID or IRI like /api/items/<uuid>.
+        label: Data/tag label. For item data this is the field label, matched exactly.
+        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.
+        value: Value as a string. Checkbox uses '0' or '1'; dates use YYYY-MM-DD; lists use a JSON string.
+        position: Sort position within the template/item (lower first).
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         item_path = _id_or_iri(item_id, "items")
@@ -673,8 +779,14 @@ def set_item_data(
 
 
 @tool("delete")
-def delete_item_data(item_id: str, label: str, dry_run: bool = True) -> str:
-    """Delete one data field from an item, matched by label."""
+def delete_item_data(item_id: Annotated[str, Field(description='Item UUID or IRI like /api/items/<uuid>.')], label: Annotated[str, Field(description='Data/tag label. For item data this is the field label, matched exactly.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Delete one data field from an item, matched by label.
+
+    Args:
+        item_id: Item UUID or IRI like /api/items/<uuid>.
+        label: Data/tag label. For item data this is the field label, matched exactly.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         item_path = _id_or_iri(item_id, "items")
@@ -698,8 +810,13 @@ def delete_item_data(item_id: str, label: str, dry_run: bool = True) -> str:
 
 
 @tool("create")
-def create_template(name: str, dry_run: bool = True) -> str:
-    """Create an item template."""
+def create_template(name: Annotated[str, Field(description='Display name.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Create an item template.
+
+    Args:
+        name: Display name.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     payload = {"name": name}
     if dry_run:
         return _preview("create_template", "POST", "/api/templates", payload, f"Create template '{name}'.")
@@ -711,8 +828,14 @@ def create_template(name: str, dry_run: bool = True) -> str:
 
 
 @tool("update")
-def update_template(template_id: str, name: str, dry_run: bool = True) -> str:
-    """Rename a template (PUT read-modify-write)."""
+def update_template(template_id: Annotated[str, Field(description='Template UUID or IRI like /api/templates/<uuid>.')], name: Annotated[str, Field(description='Display name.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Rename a template (PUT read-modify-write).
+
+    Args:
+        template_id: Template UUID or IRI like /api/templates/<uuid>.
+        name: Display name.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(template_id, "templates")
@@ -727,8 +850,14 @@ def update_template(template_id: str, name: str, dry_run: bool = True) -> str:
 
 
 @tool("delete")
-def delete_template(template_id: str, confirm_name: str, dry_run: bool = True) -> str:
-    """Delete a template. Requires confirm_name exactly matching."""
+def delete_template(template_id: Annotated[str, Field(description='Template UUID or IRI like /api/templates/<uuid>.')], confirm_name: Annotated[str, Field(description='Must exactly match the current name/label, or the delete is refused.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Delete a template. Requires confirm_name exactly matching.
+
+    Args:
+        template_id: Template UUID or IRI like /api/templates/<uuid>.
+        confirm_name: Must exactly match the current name/label, or the delete is refused.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(template_id, "templates")
@@ -747,14 +876,23 @@ def delete_template(template_id: str, confirm_name: str, dry_run: bool = True) -
 
 @tool("create")
 def create_field(
-    template_id: str,
-    name: str,
-    type: str,
-    position: int = 0,
-    visibility: str | None = None,
-    dry_run: bool = True,
+    template_id: Annotated[str, Field(description='Template UUID or IRI like /api/templates/<uuid>.')],
+    name: Annotated[str, Field(description='Display name.')],
+    type: Annotated[str, Field(description='Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.')],
+    position: Annotated[int, Field(description='Sort position within the template/item (lower first).')] = 0,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Create a field on a template (e.g. type checkbox, text, number, date)."""
+    """Create a field on a template (e.g. type checkbox, text, number, date).
+
+    Args:
+        template_id: Template UUID or IRI like /api/templates/<uuid>.
+        name: Display name.
+        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.
+        position: Sort position within the template/item (lower first).
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     payload = _clean(
         {
             "name": name,
@@ -785,14 +923,23 @@ def create_field(
 
 @tool("update")
 def update_field(
-    field_id: str,
-    name: str | None = None,
-    type: str | None = None,
-    position: int | None = None,
-    visibility: str | None = None,
-    dry_run: bool = True,
+    field_id: Annotated[str, Field(description='Field UUID or IRI like /api/fields/<uuid>.')],
+    name: Annotated[str | None, Field(description='Display name.')] = None,
+    type: Annotated[str | None, Field(description='Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.')] = None,
+    position: Annotated[int | None, Field(description='Sort position within the template/item (lower first).')] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Update a template field (PUT read-modify-write)."""
+    """Update a template field (PUT read-modify-write).
+
+    Args:
+        field_id: Field UUID or IRI like /api/fields/<uuid>.
+        name: Display name.
+        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.
+        position: Sort position within the template/item (lower first).
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(field_id, "fields")
@@ -811,8 +958,14 @@ def update_field(
 
 
 @tool("delete")
-def delete_field(field_id: str, confirm_name: str, dry_run: bool = True) -> str:
-    """Delete a template field. Requires confirm_name exactly matching."""
+def delete_field(field_id: Annotated[str, Field(description='Field UUID or IRI like /api/fields/<uuid>.')], confirm_name: Annotated[str, Field(description='Must exactly match the current name/label, or the delete is refused.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Delete a template field. Requires confirm_name exactly matching.
+
+    Args:
+        field_id: Field UUID or IRI like /api/fields/<uuid>.
+        confirm_name: Must exactly match the current name/label, or the delete is refused.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(field_id, "fields")
@@ -831,13 +984,21 @@ def delete_field(field_id: str, confirm_name: str, dry_run: bool = True) -> str:
 
 @tool("create")
 def create_tag(
-    label: str,
-    description: str | None = None,
-    category_id: str | None = None,
-    visibility: str | None = None,
-    dry_run: bool = True,
+    label: Annotated[str, Field(description='Data/tag label. For item data this is the field label, matched exactly.')],
+    description: Annotated[str | None, Field(description='Free-text description.')] = None,
+    category_id: Annotated[str | None, Field(description='Tag category UUID or IRI like /api/tag_categories/<uuid>.')] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Create a tag."""
+    """Create a tag.
+
+    Args:
+        label: Data/tag label. For item data this is the field label, matched exactly.
+        description: Free-text description.
+        category_id: Tag category UUID or IRI like /api/tag_categories/<uuid>.
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     payload = _clean(
         {
             "label": label,
@@ -861,14 +1022,23 @@ def create_tag(
 
 @tool("update")
 def update_tag(
-    tag_id: str,
-    label: str | None = None,
-    description: str | None = None,
-    category_id: str | None = None,
-    visibility: str | None = None,
-    dry_run: bool = True,
+    tag_id: Annotated[str, Field(description='Tag UUID or IRI like /api/tags/<uuid>.')],
+    label: Annotated[str | None, Field(description='Data/tag label. For item data this is the field label, matched exactly.')] = None,
+    description: Annotated[str | None, Field(description='Free-text description.')] = None,
+    category_id: Annotated[str | None, Field(description='Tag category UUID or IRI like /api/tag_categories/<uuid>.')] = None,
+    visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
-    """Update a tag (PUT read-modify-write)."""
+    """Update a tag (PUT read-modify-write).
+
+    Args:
+        tag_id: Tag UUID or IRI like /api/tags/<uuid>.
+        label: Data/tag label. For item data this is the field label, matched exactly.
+        description: Free-text description.
+        category_id: Tag category UUID or IRI like /api/tag_categories/<uuid>.
+        visibility: Visibility value as used by Koillection, e.g. public or private.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(tag_id, "tags")
@@ -894,8 +1064,14 @@ def update_tag(
 
 
 @tool("delete")
-def delete_tag(tag_id: str, confirm_name: str, dry_run: bool = True) -> str:
-    """Delete a tag. Requires confirm_name exactly matching the tag label."""
+def delete_tag(tag_id: Annotated[str, Field(description='Tag UUID or IRI like /api/tags/<uuid>.')], confirm_name: Annotated[str, Field(description='Must exactly match the current name/label, or the delete is refused.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Delete a tag. Requires confirm_name exactly matching the tag label.
+
+    Args:
+        tag_id: Tag UUID or IRI like /api/tags/<uuid>.
+        confirm_name: Must exactly match the current name/label, or the delete is refused.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
     try:
         client = get_client()
         path = _id_or_iri(tag_id, "tags")
@@ -910,6 +1086,218 @@ def delete_tag(tag_id: str, confirm_name: str, dry_run: bool = True) -> str:
         return _applied("delete_tag", {"id": tag_id, "label": label})
     except KoillectionError as exc:
         return _err(exc)
+
+
+# ---------------------------------------------------------------------------
+# Resources (read-only discovery)
+# ---------------------------------------------------------------------------
+
+
+def _resource(name: str, uri: str, description: str) -> Callable:
+    """Register a JSON resource and log reads to the call history."""
+
+    def decorator(fn: Callable) -> Callable:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            bound = inspect.signature(fn).bind_partial(*args, **kwargs)
+            started = time.perf_counter()
+            result: Any = None
+            error: str | None = None
+            try:
+                result = fn(*args, **kwargs)
+                return result
+            except Exception as exc:  # noqa: BLE001
+                error = f"{type(exc).__name__}: {exc}"
+                raise
+            finally:
+                history.record(
+                    tool=f"resource:{name}",
+                    category="resource",
+                    args=dict(bound.arguments),
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    ok=error is None,
+                    result=result,
+                    error=error,
+                )
+
+        return mcp.resource(uri, name=name, description=description, mime_type="application/json")(wrapper)
+
+    return decorator
+
+
+@_resource("collections", "koillection://collections", "All Koillection collections (summaries).")
+def res_collections() -> str:
+    """Resource: list all collections."""
+    try:
+        cols = get_client().get_all_members("/api/collections")
+        return dumps([_summarize_collection(c) for c in cols])
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@_resource("collection", "koillection://collections/{collection_id}", "One collection with its subcollections.")
+def res_collection(collection_id: str) -> str:
+    """Resource: one collection by UUID plus child summaries."""
+    try:
+        client = get_client()
+        path = _id_or_iri(collection_id, "collections")
+        collection = client.get(path)
+        children = client.get_all_members(f"{path}/children")
+        return dumps(
+            {
+                "collection": _summarize_collection(collection),
+                "children": [_summarize_collection(c) for c in children],
+            }
+        )
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@_resource("collection_items", "koillection://collections/{collection_id}/items", "Items in one collection.")
+def res_collection_items(collection_id: str) -> str:
+    """Resource: item summaries for one collection."""
+    try:
+        client = get_client()
+        path = _id_or_iri(collection_id, "collections")
+        items = client.get_all_members(f"{path}/items")
+        return dumps([_summarize_item(i) for i in items])
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@_resource("templates", "koillection://templates", "Templates with their fields.")
+def res_templates() -> str:
+    """Resource: templates including field definitions."""
+    try:
+        client = get_client()
+        templates = client.get_all_members("/api/templates")
+        out = []
+        for t in templates:
+            tid = str(t.get("id") or t.get("@id"))
+            path = _id_or_iri(tid, "templates")
+            try:
+                fields = client.get_all_members(f"{path}/fields")
+            except KoillectionError:
+                fields = []
+            out.append(
+                {
+                    "id": t.get("id") or t.get("@id"),
+                    "name": t.get("name"),
+                    "fields": [
+                        {
+                            "id": f.get("id") or f.get("@id"),
+                            "name": f.get("name"),
+                            "type": f.get("type"),
+                            "position": f.get("position"),
+                        }
+                        for f in fields
+                    ],
+                }
+            )
+        return dumps(out)
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@_resource("tags", "koillection://tags", "All tags.")
+def res_tags() -> str:
+    """Resource: list all tags."""
+    try:
+        tags = get_client().get_all_members("/api/tags")
+        return dumps(
+            [
+                {
+                    "id": t.get("id") or t.get("@id"),
+                    "label": t.get("label"),
+                    "description": t.get("description"),
+                    "category": t.get("category"),
+                }
+                for t in tags
+            ]
+        )
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@_resource("call_history", "koillection://call-history", "Recent MCP call history (JSONL log, latest 50).")
+def res_call_history() -> str:
+    """Resource: recent call-history records."""
+    return dumps(history.read_history(50))
+
+
+# ---------------------------------------------------------------------------
+# Prompts (workflow templates)
+# ---------------------------------------------------------------------------
+
+
+@mcp.prompt(description="Set up a new Koillection collection with template and fields, preview-first.")
+def setup_collection(
+    title: Annotated[str, Field(description="Title for the new collection.")],
+    parent_title: Annotated[str | None, Field(description="Optional existing parent collection title or ID; set to create a subcollection.")] = None,
+    field_ideas: Annotated[str | None, Field(description="Optional free-text ideas for fields to track, e.g. 'year, mint, owned checkbox, condition'.")] = None,
+) -> str:
+    """Prompt: guide setup of a new collection."""
+    parent_line = f"Parent: {parent_title} (resolve it with list_collections first)." if parent_title else "Parent: none (top-level collection)."
+    fields_line = f"Field ideas from the user: {field_ideas}" if field_ideas else "Field ideas: ask the user which fields matter; do not assume a fixed schema."
+    return (
+        f"Set up a new Koillection collection titled '{title}'.\n"
+        f"{parent_line}\n"
+        f"{fields_line}\n\n"
+        "Steps:\n"
+        "1. Call health_check and whoami, then list_collections and list_templates to see what already exists. Do not create duplicates.\n"
+        "2. Propose a template and field list (include an 'Owned' checkbox field if this is a collect-what-you-have set). Show the proposal and wait for approval.\n"
+        "3. For every create, call the tool with dry_run=true first and show the preview. Only apply with dry_run=false after explicit confirmation.\n"
+        "4. Create in order: collection (or subcollection), template, fields, then optionally assign the template.\n"
+        "5. Verify with get_collection and list_fields, and summarize what was created with IDs."
+    )
+
+
+@mcp.prompt(description="Populate a collection from a pasted list, with dedupe and a combined preview.")
+def populate_from_list(
+    collection: Annotated[str, Field(description="Target collection title, UUID, or IRI.")],
+    items_text: Annotated[str, Field(description="The list to import, one item per line; field values may follow commas or key: value pairs.")],
+) -> str:
+    """Prompt: guide populating a collection from a static list."""
+    return (
+        f"Populate Koillection collection '{collection}' from this list:\n\n{items_text}\n\n"
+        "Steps:\n"
+        "1. Call health_check, resolve the collection with list_collections, then list_items on it.\n"
+        "2. Parse the list into items. Skip any whose name already exists in the collection (report skips).\n"
+        "3. Read the collection's field definitions at run time (template/fields); never hard-code field names. Map list values to data fields; flag unmapped values instead of inventing fields.\n"
+        "4. Call create_item with dry_run=true for every new item and present ONE combined preview. Do not apply anything yet.\n"
+        "5. Only after explicit confirmation, re-call with dry_run=false. Then verify with list_items (count) and get_item on a spot-check item."
+    )
+
+
+@mcp.prompt(description="Review/audit one collection read-only: counts, gaps, duplicates.")
+def review_collection(
+    collection: Annotated[str, Field(description="Collection title, UUID, or IRI to review.")],
+) -> str:
+    """Prompt: guide a read-only collection review."""
+    return (
+        f"Review the Koillection collection '{collection}'. This is read-only: change nothing.\n\n"
+        "Steps:\n"
+        "1. Call health_check, resolve the collection, then get_collection (note subcollections) and list_items.\n"
+        "2. Check templates/fields that apply, and read a sample of items with get_item to see which data fields are actually filled.\n"
+        "3. Report: item and subcollection counts, duplicate names, items with no data fields, fields that are always empty, and anything that looks misplaced.\n"
+        "4. End with suggested next actions, but do not apply any change without a separate confirmed request."
+    )
+
+
+@mcp.prompt(description="Summarize owned vs wanted items in a collection from its Owned checkbox. Read-only.")
+def have_vs_want_summary(
+    collection: Annotated[str, Field(description="Collection title, UUID, or IRI to summarize.")],
+    owned_label: Annotated[str, Field(description="Label of the owned checkbox data field.")] = "Owned",
+) -> str:
+    """Prompt: guide a have-vs-want summary."""
+    return (
+        f"Summarize have-vs-want for Koillection collection '{collection}' using the '{owned_label}' checkbox.\n\n"
+        "Steps:\n"
+        "1. Call health_check, resolve the collection, then list_items on it.\n"
+        f"2. For every item, call get_item and read its '{owned_label}' data field: value '1' means owned; '0' or missing means wanted.\n"
+        "3. Report two lists (owned, wanted) with counts and the owned percentage.\n"
+        "4. Do NOT change any listing in this workflow. If the user later wants updates, each flip needs a set_item_data dry_run preview and explicit confirmation first."
+    )
 
 
 def main() -> None:

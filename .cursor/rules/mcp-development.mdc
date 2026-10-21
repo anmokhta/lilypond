@@ -1,0 +1,20 @@
+---
+description: MCP server development standards for the Koillection MCP (Python SDK 2.x, stdio)
+globs: koillection-mcp/src/**/*.py,koillection-mcp/scripts/**/*.py
+alwaysApply: false
+---
+
+# MCP development — Koillection server
+
+Canonical guidance: `AGENTS.md` (MCP engineering standard + compliance audit). Spec: https://modelcontextprotocol.io/docs/2026-07-28/develop/build-server
+
+When editing MCP code in this repo:
+
+- Build on `MCPServer` (`mcp.server.mcpserver`, SDK 2.x). Tools are registered only in `server.py` via the local `@tool(category)` decorator; all Koillection HTTP goes through `client.py`. Capabilities are tools + read-only resources (`koillection://...` via `@_resource`) + prompts (`@mcp.prompt`); new capabilities need a plan change.
+- **Never write to stdout** in server code (corrupts stdio JSON-RPC). No `print()` under `koillection-mcp/src/`; diagnostics go to stderr `logging` or files.
+- Schemas come from type hints: **every tool and prompt parameter needs `Annotated[..., Field(description="...")]`** (docstring `Args:` alone does not populate SDK 2.x schemas; keep Args sections for humans anyway). Tools also need a `[read]`/`[create]`/`[update]`/`[delete]` category prefix and correct `ToolAnnotations` (reads read-only, deletes destructive). Resources are read-only JSON and logged with category `resource`.
+- Write contract: every create/update/delete tool takes `dry_run: bool = True`, returns the exact payload on dry run, and deletes require exact `confirm_title`/`confirm_name`. Updates are PUT read-modify-write. Item metadata goes through `/api/data` (one call per field; `set_item_data` upserts by label).
+- Keep the JSONL call-history wrapper on every tool; never log secrets. Credentials only from `koillection-mcp/.env` — never in MCP JSON, code, or chat.
+- Errors are returned as JSON strings `{"error": ..., "message": ...}`, not raised to the client.
+- After changes: run `uv run python scripts/smoke_readonly.py` (read changes) and `uv run python scripts/test_crud_sandbox.py` (write changes) from `koillection-mcp/`, and confirm the tool count via `mcp.list_tools()`.
+- If tool behavior changes, update the `AGENTS.md` compliance audit and `goal-1-koillection-mcp.md` findings in the same change.

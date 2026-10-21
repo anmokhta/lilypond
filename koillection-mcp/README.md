@@ -81,6 +81,28 @@ Updates are PUT read-modify-write: the server GETs the current object, merges on
 ### Delete
 `delete_collection`, `delete_item`, `delete_item_data`, `delete_template`, `delete_field`, `delete_tag` — confirm-name required; collections cascade.
 
+## Resources (read-only, `application/json`)
+
+| URI | Content |
+|---|---|
+| `koillection://collections` | Collection summaries |
+| `koillection://collections/{collection_id}` | One collection + children |
+| `koillection://collections/{collection_id}/items` | Item summaries |
+| `koillection://templates` | Templates with fields |
+| `koillection://tags` | Tags |
+| `koillection://call-history` | Recent call history |
+
+## Prompts
+
+| Prompt | Drives |
+|---|---|
+| `setup_collection` | Propose template/fields, preview, confirm, create, verify |
+| `populate_from_list` | Parse a pasted list, dedupe, combined dry-run preview, apply, verify |
+| `review_collection` | Read-only audit: counts, gaps, duplicates |
+| `have_vs_want_summary` | Owned vs wanted split from the Owned checkbox (read-only) |
+
+Every tool and prompt parameter carries a schema `description` (`Annotated[..., Field(...)]`); `scripts/test_resources_prompts.py` verifies descriptions, resources, and prompts.
+
 ## Call history (manager-ready)
 
 Every tool call appends one JSON record to `logs/calls.jsonl` (gitignored; override with `KOILLECTION_MCP_LOG_FILE`): schema version, timestamp, server/tool, category, redacted args, `dry_run`, duration, ok/error, short result summary. Tools carry read/create/update/delete categories in descriptions and MCP annotations (`read_only_hint` / `destructive_hint`), and `tools/list` is the tool manifest. A future MCP manager can enumerate tools via the protocol and read this log per server. Logging never breaks a tool call.
