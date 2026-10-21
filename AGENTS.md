@@ -79,7 +79,9 @@ uv run python scripts/test_crud_sandbox.py    # writes: full lifecycle on _MCP C
 uv run python scripts/test_resources_prompts.py  # Args descriptions, resources, prompts
 ```
 
-Plus: confirm the tool count via `mcp.list_tools()` (28 as of 2026-10-20) after registration changes, and spot-check `get_call_history` after write-path changes.
+Plus: confirm the tool count via `mcp.list_tools()` (31 as of 2026-10-20) after registration changes, and spot-check `get_call_history` after write-path changes.
+
+Template patterns: `get_collection_template` resolves a collection's **own** default (Koillection has no parent inheritance — report `null`, never walk up). `copy_template` is the MCP-emulated clone (Koillection has no clone API): one dry-run diff (drop/rename/retype/add) before applying, new field records so copies are independent, partial-failure reporting instead of silent continuation.
 
 ## Compliance audit — 2026-10-20
 

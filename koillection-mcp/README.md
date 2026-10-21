@@ -70,10 +70,12 @@ Updates are PUT read-modify-write: the server GETs the current object, merges on
 | `get_call_history` | Recent entries from the JSONL call log |
 | `list_collections` / `get_collection` | Collections (+ children) |
 | `list_templates` / `list_fields` / `list_tags` | Structure |
+| `get_template` | One template + position-sorted fields |
+| `get_collection_template` | A collection's own default template + fields (explicit `null` when unset — Koillection has **no parent inheritance**) |
 | `list_items` / `get_item` / `search_items` | Items (get_item includes data fields) |
 
 ### Create
-`create_collection` (parent_id → subcollection), `create_item` (with `data` fields), `set_item_data` (upsert by label), `create_template`, `create_field`, `create_tag`
+`create_collection` (parent_id → subcollection), `create_item` (with `data` fields), `set_item_data` (upsert by label), `create_template`, `copy_template` (clone fields with drop/rename/retype/add in one dry-run preview), `create_field`, `create_tag`
 
 ### Update
 `update_collection`, `update_item`, `update_template`, `update_field`, `update_tag` — all PUT read-modify-write; setting a parent/collection moves the object.

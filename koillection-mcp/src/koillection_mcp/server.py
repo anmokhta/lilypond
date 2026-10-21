@@ -288,6 +288,84 @@ def get_collection(collection_id: Annotated[str, Field(description='Collection U
         return _err(exc)
 
 
+def _summarize_field(f: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f.get("id") or f.get("@id"),
+        "name": f.get("name"),
+        "type": f.get("type"),
+        "position": f.get("position"),
+        "template": f.get("template"),
+        "visibility": f.get("visibility"),
+        "choiceList": f.get("choiceList"),
+    }
+
+
+def _template_with_fields(client: KoillectionClient, template_path: str) -> dict[str, Any]:
+    template = client.get(template_path)
+    fields = client.get_all_members(f"{template_path}/fields")
+    summarized = [_summarize_field(f) for f in fields]
+    summarized.sort(key=lambda f: (f.get("position") if f.get("position") is not None else 0, str(f.get("name"))))
+    return {
+        "template": {
+            "id": template.get("id") or template.get("@id"),
+            "name": template.get("name"),
+            "createdAt": template.get("createdAt"),
+        },
+        "fields": summarized,
+    }
+
+
+@tool("read")
+def get_template(template_id: Annotated[str, Field(description="Template UUID or IRI like /api/templates/<uuid>.")]) -> str:
+    """Get one template with its fields sorted by position.
+
+    Args:
+        template_id: Template UUID or IRI like /api/templates/<uuid>.
+    """
+    try:
+        client = get_client()
+        path = _id_or_iri(template_id, "templates")
+        return dumps(_template_with_fields(client, path))
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@tool("read")
+def get_collection_template(collection_id: Annotated[str, Field(description="Collection UUID or IRI like /api/collections/<uuid>.")]) -> str:
+    """Resolve a collection's own default items template and its fields.
+
+    Koillection has no parent inheritance: only the collection's own
+    itemsDefaultTemplate is returned, never a parent collection's.
+
+    Args:
+        collection_id: Collection UUID or IRI like /api/collections/<uuid>.
+    """
+    try:
+        client = get_client()
+        path = _id_or_iri(collection_id, "collections")
+        collection = client.get(path)
+        template_iri = collection.get("itemsDefaultTemplate")
+        if not template_iri:
+            return dumps(
+                {
+                    "collection": _summarize_collection(collection),
+                    "template": None,
+                    "fields": [],
+                    "note": "This collection has no default items template. Koillection does not inherit one from a parent collection.",
+                }
+            )
+        resolved = _template_with_fields(client, _iri(str(template_iri), "templates"))
+        return dumps(
+            {
+                "collection": _summarize_collection(collection),
+                "template": resolved["template"],
+                "fields": resolved["fields"],
+            }
+        )
+    except KoillectionError as exc:
+        return _err(exc)
+
+
 @tool("read")
 def list_templates() -> str:
     """List item templates.
@@ -807,6 +885,161 @@ def delete_item_data(item_id: Annotated[str, Field(description='Item UUID or IRI
 # ---------------------------------------------------------------------------
 # Templates / fields / tags CRUD (supporting structure)
 # ---------------------------------------------------------------------------
+
+
+_ALLOWED_FIELD_TYPES = {
+    "text", "textarea", "number", "country", "date", "rating", "list",
+    "choice-list", "checkbox", "link", "image", "sign", "file", "video",
+}
+
+
+@tool("create")
+def copy_template(
+    source_template_id: Annotated[str, Field(description="Source template UUID or IRI to copy fields from.")],
+    new_name: Annotated[str, Field(description="Name for the new template.")],
+    drop_fields: Annotated[list[str] | None, Field(description="Source field names to omit from the copy.")] = None,
+    rename_fields: Annotated[dict[str, str] | None, Field(description="Map of source field name -> new name.")] = None,
+    type_overrides: Annotated[dict[str, str] | None, Field(description="Map of source field name -> new Koillection field type.")] = None,
+    add_fields: Annotated[list[dict[str, Any]] | None, Field(description="Extra fields to add: {name, type, position?, visibility?}.")] = None,
+    dry_run: Annotated[bool, Field(description="Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.")] = True,
+) -> str:
+    """Copy a template's fields into a new template, with modifications.
+
+    Args:
+        source_template_id: Source template UUID or IRI to copy fields from.
+        new_name: Name for the new template.
+        drop_fields: Source field names to omit from the copy.
+        rename_fields: Map of source field name -> new name.
+        type_overrides: Map of source field name -> new Koillection field type.
+        add_fields: Extra fields to add: {name, type, position?, visibility?}.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
+    drop_fields = drop_fields or []
+    rename_fields = rename_fields or {}
+    type_overrides = type_overrides or {}
+    add_fields = add_fields or []
+    try:
+        client = get_client()
+        source_path = _id_or_iri(source_template_id, "templates")
+        source = _template_with_fields(client, source_path)
+        source_fields = source["fields"]
+        by_name = {f["name"]: f for f in source_fields}
+
+        errors: list[str] = []
+        for label, names in (("drop_fields", drop_fields), ("rename_fields", list(rename_fields)), ("type_overrides", list(type_overrides))):
+            for field_name in names:
+                if field_name not in by_name:
+                    errors.append(f"{label}: no source field named '{field_name}'")
+        for field_name, new_type in type_overrides.items():
+            if new_type not in _ALLOWED_FIELD_TYPES:
+                errors.append(f"type_overrides: '{new_type}' is not a Koillection field type")
+
+        result_fields: list[dict[str, Any]] = []
+        dropped: list[str] = []
+        for f in source_fields:
+            fname = f["name"]
+            if fname in drop_fields:
+                dropped.append(fname)
+                continue
+            new_field_name = rename_fields.get(fname, fname)
+            new_type = type_overrides.get(fname, f["type"])
+            change = "kept"
+            if new_field_name != fname and new_type != f["type"]:
+                change = "renamed+retyped"
+            elif new_field_name != fname:
+                change = "renamed"
+            elif new_type != f["type"]:
+                change = "retyped"
+            result_fields.append(
+                {
+                    "source_name": fname,
+                    "name": new_field_name,
+                    "type": new_type,
+                    "position": f.get("position"),
+                    "visibility": f.get("visibility"),
+                    "choiceList": f.get("choiceList"),
+                    "change": change,
+                }
+            )
+        next_position = max([f["position"] for f in result_fields if f.get("position") is not None], default=-1) + 1
+        for entry in add_fields:
+            entry_name = entry.get("name")
+            entry_type = entry.get("type")
+            if not entry_name or not entry_type:
+                errors.append(f"add_fields: each entry needs name and type, got {entry}")
+                continue
+            if entry_type not in _ALLOWED_FIELD_TYPES:
+                errors.append(f"add_fields: '{entry_type}' is not a Koillection field type")
+            position = entry.get("position")
+            if position is None:
+                position = next_position
+                next_position += 1
+            result_fields.append(
+                {
+                    "source_name": None,
+                    "name": entry_name,
+                    "type": entry_type,
+                    "position": position,
+                    "visibility": entry.get("visibility"),
+                    "choiceList": entry.get("choiceList"),
+                    "change": "added",
+                }
+            )
+        seen_names: set[str] = set()
+        for f in result_fields:
+            if f["name"] in seen_names:
+                errors.append(f"duplicate resulting field name '{f['name']}'")
+            seen_names.add(f["name"])
+        if errors:
+            return dumps({"error": "ValidationError", "message": "; ".join(errors)})
+
+        result_fields.sort(key=lambda f: (f["position"] if f.get("position") is not None else 0, str(f["name"])))
+        field_payloads = [
+            _clean(
+                {
+                    "name": f["name"],
+                    "position": f["position"],
+                    "type": f["type"],
+                    "visibility": f.get("visibility"),
+                    "choiceList": f.get("choiceList"),
+                }
+            )
+            for f in result_fields
+        ]
+        if dry_run:
+            return _preview(
+                "copy_template",
+                "POST",
+                "/api/templates + /api/fields",
+                {"template": {"name": new_name}, "fields": field_payloads},
+                f"Copy template '{source['template'].get('name')}' to '{new_name}' with {len(result_fields)} field(s).",
+                extra={"source_fields": source_fields, "result_fields": result_fields, "dropped": dropped},
+            )
+        created_template = client.post("/api/templates", {"name": new_name})
+        new_template_iri = _iri(str(created_template.get("id") or created_template.get("@id")), "templates")
+        created_fields: list[dict[str, Any]] = []
+        try:
+            for payload in field_payloads:
+                datum = client.post("/api/fields", {**payload, "template": new_template_iri})
+                created_fields.append(_summarize_field(datum))
+        except KoillectionError as exc:
+            return dumps(
+                {
+                    "error": type(exc).__name__,
+                    "message": str(exc),
+                    "partial_failure": True,
+                    "created_template": {"id": created_template.get("id") or created_template.get("@id"), "name": new_name},
+                    "created_fields": created_fields,
+                    "note": "Template copy partially applied. Finish manually or delete_template with confirmation.",
+                }
+            )
+        return _applied(
+            "copy_template",
+            {"id": created_template.get("id") or created_template.get("@id"), "name": new_name},
+            extra={"fields": created_fields, "source_template": source["template"]},
+        )
+    except KoillectionError as exc:
+        return _err(exc)
 
 
 @tool("create")

@@ -11,6 +11,7 @@ import json
 import sys
 
 from koillection_mcp.server import (
+    copy_template,
     create_collection,
     create_field,
     create_item,
@@ -24,8 +25,11 @@ from koillection_mcp.server import (
     delete_template,
     get_call_history,
     get_collection,
+    get_collection_template,
     get_item,
+    get_template,
     list_items,
+    list_templates,
     set_item_data,
     update_collection,
     update_field,
@@ -142,6 +146,74 @@ def main() -> int:
     check("update_field", upd_field.get("applied") is True)
     upd_tag = parse(update_tag(tag_id, description="crud test updated", dry_run=False))
     check("update_tag", upd_tag.get("applied") is True)
+
+    # --- template resolver + copy ----------------------------------------------
+    tmpl_view = parse(get_template(template_id))
+    check("get_template field order", [f["name"] for f in tmpl_view.get("fields", [])] == ["Owned", "Note"],
+          json.dumps(tmpl_view)[:300])
+
+    set_default = parse(update_collection(sandbox_id, items_default_template_id=template_id, dry_run=False))
+    check("set collection default template", set_default.get("applied") is True, json.dumps(set_default)[:300])
+    resolved = parse(get_collection_template(sandbox_id))
+    check("get_collection_template resolves", (resolved.get("template") or {}).get("name") == "Sandbox Template v2")
+    sub_resolved = parse(get_collection_template(sub_id))
+    check("subcollection reports no inherited default", sub_resolved.get("template") is None)
+
+    templates_before = parse(list_templates())
+    copy_preview = parse(
+        copy_template(
+            template_id,
+            "Sandbox Copy",
+            rename_fields={"Owned": "Collected"},
+            type_overrides={"Note": "textarea"},
+            add_fields=[{"name": "State", "type": "text"}],
+        )
+    )
+    check("copy_template dry-run", copy_preview.get("dry_run") is True, json.dumps(copy_preview)[:300])
+    result_fields = {f["name"]: f for f in copy_preview.get("result_fields", [])}
+    check(
+        "copy preview rename/retype/add",
+        result_fields.get("Collected", {}).get("change") == "renamed"
+        and result_fields.get("Note", {}).get("type") == "textarea"
+        and result_fields.get("State", {}).get("change") == "added",
+        json.dumps(result_fields)[:300],
+    )
+    templates_after_dry = parse(list_templates())
+    check("copy dry-run created nothing", len(templates_after_dry) == len(templates_before))
+
+    copied = parse(
+        copy_template(
+            template_id,
+            "Sandbox Copy",
+            rename_fields={"Owned": "Collected"},
+            type_overrides={"Note": "textarea"},
+            add_fields=[{"name": "State", "type": "text"}],
+            dry_run=False,
+        )
+    )
+    check("copy_template apply", copied.get("applied") is True, json.dumps(copied)[:400])
+    copy_id = copied["result"]["id"]
+    copy_fields = {f["name"]: f for f in copied.get("fields", [])}
+    check("copy fields created", set(copy_fields) == {"Collected", "Note", "State"}, str(set(copy_fields)))
+
+    # independence: rename a copied field, source must be unaffected
+    parse(update_field(copy_fields["State"]["id"], name="State Renamed", dry_run=False))
+    source_after = parse(get_template(template_id))
+    check(
+        "copy is independent from source",
+        [f["name"] for f in source_after.get("fields", [])] == ["Owned", "Note"],
+    )
+
+    assign_copy = parse(update_collection(sub_id, items_default_template_id=copy_id, dry_run=False))
+    check("assign copy as subcollection default", assign_copy.get("applied") is True)
+    sub_resolved2 = parse(get_collection_template(sub_id))
+    check("subcollection default resolves to copy", (sub_resolved2.get("template") or {}).get("name") == "Sandbox Copy")
+
+    for fname in ["Collected", "Note", "State Renamed"]:
+        fid = next((f["id"] for f in parse(get_template(copy_id)).get("fields", []) if f["name"] == fname), None)
+        if fid:
+            parse(delete_field(fid, confirm_name=fname, dry_run=False))
+    parse(delete_template(copy_id, confirm_name="Sandbox Copy", dry_run=False))
 
     # --- deletes (sandbox teardown) -------------------------------------------
     bad = parse(delete_item(item2_id, confirm_name="Wrong Name", dry_run=False))
