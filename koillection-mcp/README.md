@@ -1,0 +1,90 @@
+# koillection-mcp
+
+MCP server for Koillection. Runs as a local stdio process (no Mac app).
+
+Read tools plus full CRUD for collections/subcollections, items, item data, templates, fields, and tags. **Every write tool defaults to `dry_run=true`** (preview only); applying requires `dry_run=false`, and deletes require an exact confirm title/name.
+
+## Setup
+
+```bash
+cd koillection-mcp
+cp .env.example .env
+# Edit .env: set KOILLECTION_PASSWORD (and URL/username if needed)
+uv sync
+```
+
+## Run (stdio)
+
+```bash
+uv run koillection-mcp
+```
+
+## Tests
+
+```bash
+uv run python scripts/smoke_readonly.py      # read-only auth + listing smoke
+uv run python scripts/test_crud_sandbox.py   # full CRUD lifecycle on a throwaway collection (self-cleaning)
+```
+
+## Cursor MCP config
+
+Registered in `~/.cursor/mcp.json` as server `koillection` (alongside `homelab-gateway`). Snippet:
+
+```json
+{
+  "mcpServers": {
+    "koillection": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/andrewmokhtarzadeh/code/lilypond/koillection-mcp",
+        "run",
+        "koillection-mcp"
+      ]
+    }
+  }
+}
+```
+
+Reload MCP servers in Cursor after code changes. `python-dotenv` loads `.env` from this directory — keep secrets out of the MCP JSON.
+
+## Claude Desktop config
+
+Same command in `~/Library/Application Support/Claude/claude_desktop_config.json` under `mcpServers.koillection`. Restart Claude Desktop after editing.
+
+## Dry-run contract (all write tools)
+
+1. Call with `dry_run=true` (default) → returns the exact payload(s) and a summary; nothing is written.
+2. Show the preview to the user; only on explicit confirmation re-call with `dry_run=false`.
+3. Deletes also require `confirm_title` / `confirm_name` exactly matching the current value. Collection deletes cascade (preview reports recursive subcollection/item counts).
+
+Updates are PUT read-modify-write: the server GETs the current object, merges only supplied fields, and PUTs the full payload (Koillection maintainer recommends PUT over PATCH).
+
+## Tools
+
+### Read
+| Tool | Purpose |
+|---|---|
+| `health_check` | Docs reachable + login works |
+| `whoami` | Which user the JWT is |
+| `get_call_history` | Recent entries from the JSONL call log |
+| `list_collections` / `get_collection` | Collections (+ children) |
+| `list_templates` / `list_fields` / `list_tags` | Structure |
+| `list_items` / `get_item` / `search_items` | Items (get_item includes data fields) |
+
+### Create
+`create_collection` (parent_id → subcollection), `create_item` (with `data` fields), `set_item_data` (upsert by label), `create_template`, `create_field`, `create_tag`
+
+### Update
+`update_collection`, `update_item`, `update_template`, `update_field`, `update_tag` — all PUT read-modify-write; setting a parent/collection moves the object.
+
+### Delete
+`delete_collection`, `delete_item`, `delete_item_data`, `delete_template`, `delete_field`, `delete_tag` — confirm-name required; collections cascade.
+
+## Call history (manager-ready)
+
+Every tool call appends one JSON record to `logs/calls.jsonl` (gitignored; override with `KOILLECTION_MCP_LOG_FILE`): schema version, timestamp, server/tool, category, redacted args, `dry_run`, duration, ok/error, short result summary. Tools carry read/create/update/delete categories in descriptions and MCP annotations (`read_only_hint` / `destructive_hint`), and `tools/list` is the tool manifest. A future MCP manager can enumerate tools via the protocol and read this log per server. Logging never breaks a tool call.
+
+## Instance notes
+
+Default base URL: `http://192.168.86.31:3120` (Koillection on `tertius`, port 3120). API version verified as 1.8.4. Known API quirks: item metadata is separate `/api/data` calls (one per field); `GET /api/collections/{id}/items` returns `[]` for a deleted collection instead of 404.

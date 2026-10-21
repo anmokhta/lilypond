@@ -1,0 +1,21 @@
+[project]
+name = "koillection-mcp"
+version = "0.1.0"
+description = "Read-only MCP server for Koillection (Goal 1 Track A)"
+readme = "README.md"
+authors = [
+    { name = "Andrew Mok", email = "amokhtarzadeh22@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=2.3.0",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+koillection-mcp = "koillection_mcp:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
