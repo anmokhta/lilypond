@@ -48,7 +48,7 @@ def _text(result) -> str:
 
 async def main() -> int:
     tools = await mcp.list_tools()
-    check("tool count is 31", len(tools) == 31, str(len(tools)))
+    check("tool count is 33", len(tools) == 33, str(len(tools)))
     missing = [
         f"{t.name}.{name}"
         for t in tools

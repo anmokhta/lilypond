@@ -7,8 +7,11 @@ Everything created here is deleted by the end (delete tools included).
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
+import tempfile
+from pathlib import Path
 
 from koillection_mcp.server import (
     copy_template,
@@ -36,6 +39,8 @@ from koillection_mcp.server import (
     update_item,
     update_tag,
     update_template,
+    upload_item_data_image,
+    upload_item_image,
 )
 
 FAILURES: list[str] = []
@@ -115,6 +120,39 @@ def main() -> int:
 
     view = parse(get_item(item1_id))
     check("get_item", view["item"]["name"] == "Test Item One" and len(view["data"]) == 2)
+
+    # --- image uploads + related items ---------------------------------------
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAwMCAO+ip1sAAAAASUVORK5CYII="
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        image_path = Path(tmp) / "pixel.png"
+        image_path.write_bytes(png_bytes)
+        main_preview = parse(upload_item_image(item1_id, str(image_path)))
+        check("upload_item_image dry-run", main_preview.get("dry_run") is True and main_preview.get("applied") is False)
+        main_upload = parse(upload_item_image(item1_id, str(image_path), dry_run=False))
+        check("upload_item_image apply", main_upload.get("applied") is True, json.dumps(main_upload)[:400])
+        data_preview = parse(upload_item_data_image(item1_id, "Front Image", str(image_path)))
+        check("upload_item_data_image dry-run", data_preview.get("dry_run") is True and data_preview.get("applied") is False)
+        data_upload = parse(upload_item_data_image(item1_id, "Front Image", str(image_path), dry_run=False))
+        check("upload_item_data_image apply", data_upload.get("applied") is True, json.dumps(data_upload)[:400])
+    view = parse(get_item(item1_id))
+    check("main image stored", bool(view["item"].get("image")), json.dumps(view["item"])[:300])
+    front = next((d for d in view["data"] if d.get("label") == "Front Image"), {})
+    check(
+        "data image stored",
+        front.get("type") == "image" and bool(front.get("value") or front.get("file") or front.get("image")),
+        json.dumps(front)[:300],
+    )
+
+    related = parse(update_item(item1_id, related_item_ids=[item2_id], dry_run=False))
+    check("update_item related_items apply", related.get("applied") is True, json.dumps(related)[:400])
+    view = parse(get_item(item1_id))
+    related_iris = view["item"].get("relatedItems") or []
+    check("related item recorded", any(str(r).endswith(item2_id) for r in related_iris), json.dumps(related_iris)[:300])
+    sibling = parse(get_item(item2_id))
+    sibling_iris = sibling["item"].get("relatedItems") or []
+    print(f"INFO related-items mirrored by API: {any(str(r).endswith(item1_id) for r in sibling_iris)}")
 
     # --- updates -------------------------------------------------------------
     flip = parse(set_item_data(item1_id, "Owned", "checkbox", "1", dry_run=False))

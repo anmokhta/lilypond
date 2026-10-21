@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 from pathlib import Path
 from typing import Any
@@ -125,6 +126,39 @@ class KoillectionClient:
 
     def post(self, path: str, json_body: Any = None) -> Any:
         return self.request("POST", path, json_body=json_body)
+
+    def post_multipart(
+        self,
+        path: str,
+        file_path: str,
+        *,
+        field_name: str = "file",
+        retry_auth: bool = True,
+    ) -> Any:
+        """POST one local file as multipart/form-data; re-login once on 401."""
+        self._require_config()
+        local_path = Path(file_path).expanduser()
+        if not local_path.is_file():
+            raise KoillectionError(f"Upload file not found: {local_path}")
+        mime_type = mimetypes.guess_type(local_path.name)[0] or "application/octet-stream"
+        normalized = self._normalize_path(path)
+        url = normalized if normalized.startswith("http") else f"{self.base_url}{normalized}"
+        with local_path.open("rb") as handle:
+            response = self._client.post(
+                url,
+                files={field_name: (local_path.name, handle, mime_type)},
+                headers=self._auth_headers(),
+            )
+        if response.status_code == 401 and retry_auth:
+            self.login()
+            return self.post_multipart(path, file_path, field_name=field_name, retry_auth=False)
+        if response.status_code >= 400:
+            raise KoillectionError(
+                f"POST {normalized} failed ({response.status_code}): {response.text[:400]}"
+            )
+        if not response.content:
+            return None
+        return response.json()
 
     def put(self, path: str, json_body: Any = None) -> Any:
         return self.request("PUT", path, json_body=json_body)

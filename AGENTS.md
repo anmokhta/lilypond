@@ -79,7 +79,7 @@ uv run python scripts/test_crud_sandbox.py    # writes: full lifecycle on _MCP C
 uv run python scripts/test_resources_prompts.py  # Args descriptions, resources, prompts
 ```
 
-Plus: confirm the tool count via `mcp.list_tools()` (31 as of 2026-10-20) after registration changes, and spot-check `get_call_history` after write-path changes.
+Plus: confirm the tool count via `mcp.list_tools()` (33 as of 2026-10-20, incl. `upload_item_image` / `upload_item_data_image`) after registration changes, and spot-check `get_call_history` after write-path changes.
 
 Template patterns: `get_collection_template` resolves a collection's **own** default (Koillection has no parent inheritance — report `null`, never walk up). `copy_template` is the MCP-emulated clone (Koillection has no clone API): one dry-run diff (drop/rename/retype/add) before applying, new field records so copies are independent, partial-failure reporting instead of silent continuation.
 
@@ -105,7 +105,8 @@ Audit of the current server against the build-server guide. Gaps are follow-ups;
 - Base: `http://192.168.86.31:3120`; OpenAPI 1.8.4 at `/api/docs.json`; human docs at `/api`.
 - Auth: `POST /api/authentication_token` (username/password) → JWT; send `Authorization: Bearer <token>`; re-login on 401.
 - Collections: field is `title`; subcollection = `parent` IRI. Items require `name` + `collection` IRI. Data (metadata) records require `type` + `label`, linked by `item` IRI.
-- Content rules: JSON generally; uploads POST-only `multipart/form-data` (no upload tools yet); PUT preferred over PATCH.
+- Content rules: JSON generally; uploads POST-only `multipart/form-data` (item main image field `file`; datum image field `fileImage` — verified 2026-10-20); PUT preferred over PATCH.
+- Item reads do not embed `relatedItems` or tags; relations live at `GET /api/items/{id}/related_items` and are **not mirrored** — set both directions explicitly (verified 2026-10-20).
 - Limits: no admin features, no sharing access — calls act as the logged-in user (`anmokhta`, decided 2026-10-20 as the MCP user). Checkbox values are `"0"`/`"1"`; `/api/collections/{id}/items` returns `[]` for deleted collections.
 
 ## Design decisions (settled)
@@ -113,6 +114,7 @@ Audit of the current server against the build-server guide. Gaps are follow-ups;
 1. Have-vs-want is a checkbox field on each item, not a wishlist (2026-10-18).
 2. Setup and import are separate workflows; import-style tools read field definitions at run time and never hard-code field names (2026-10-18).
 3. MCP runs as the `anmokhta` user; a dedicated user would see none of the existing data (2026-10-20).
+4. Coin versions are separate items linked P↔D via Related Items; the 50 states + 2009 DC/Territories share one subcollection (`State & Territories Quarters`) and one unified program template, circulating P/D strikes only (2026-10-20).
 
 ## Safety constraints
 

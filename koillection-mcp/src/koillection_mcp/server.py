@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import inspect
+import mimetypes
 import time
+from pathlib import Path
 from typing import Annotated, Any, Callable
 
 from mcp.server.mcpserver import MCPServer
@@ -150,6 +153,7 @@ def _summarize_item(item: dict[str, Any]) -> dict[str, Any]:
         "collection": item.get("collection"),
         "visibility": item.get("finalVisibility") or item.get("visibility"),
         "image": item.get("image"),
+        "relatedItems": item.get("relatedItems"),
     }
 
 
@@ -159,6 +163,11 @@ def _summarize_datum(d: dict[str, Any]) -> dict[str, Any]:
         "label": d.get("label"),
         "type": d.get("type"),
         "value": d.get("value"),
+        "file": d.get("file"),
+        "image": d.get("image"),
+        "imageSmallThumbnail": d.get("imageSmallThumbnail"),
+        "imageLargeThumbnail": d.get("imageLargeThumbnail"),
+        "originalFilename": d.get("originalFilename"),
         "position": d.get("position"),
         "item": d.get("item"),
         "collection": d.get("collection"),
@@ -168,6 +177,31 @@ def _summarize_datum(d: dict[str, Any]) -> dict[str, Any]:
 
 def _err(exc: Exception) -> str:
     return dumps({"error": type(exc).__name__, "message": str(exc)})
+
+
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def _image_file_info(image_path: str) -> dict[str, Any]:
+    """Validate a local image file and return metadata only (never bytes)."""
+    path = Path(image_path).expanduser()
+    if path.suffix.lower() not in _IMAGE_SUFFIXES:
+        raise KoillectionError(
+            f"Unsupported image extension '{path.suffix}'. Use JPG, PNG, GIF, or WebP."
+        )
+    if not path.is_file():
+        raise KoillectionError(f"Image file not found: {path}")
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "path": str(path),
+        "filename": path.name,
+        "size_bytes": path.stat().st_size,
+        "mime_type": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        "sha256": digest.hexdigest(),
+    }
 
 
 def _preview(action: str, method: str, path: str, payload: Any, summary: str, extra: dict | None = None) -> str:
@@ -502,10 +536,16 @@ def get_item(item_id: Annotated[str, Field(description='Item UUID or IRI like /a
         path = _id_or_iri(item_id, "items")
         item = client.get(path)
         data = client.get_all_members(f"{path}/data")
+        related = client.get_all_members(f"{path}/related_items")
+        item_summary = _summarize_item(item)
+        item_summary["relatedItems"] = [
+            str(r.get("id") or r.get("@id")) for r in related if isinstance(r, dict)
+        ]
         return dumps(
             {
-                "item": _summarize_item(item),
+                "item": item_summary,
                 "raw": item,
+                "related_items": [_summarize_item(r) for r in related if isinstance(r, dict)],
                 "data": [_summarize_datum(d) for d in data],
             }
         )
@@ -734,6 +774,7 @@ def update_item(
     visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
     collection_id: Annotated[str | None, Field(description='Collection UUID or IRI like /api/collections/<uuid>.')] = None,
     tag_ids: Annotated[list[str] | None, Field(description='Tag UUIDs or IRIs to attach.')] = None,
+    related_item_ids: Annotated[list[str] | None, Field(description='Related item UUIDs or IRIs to set on this item; replaces the current related-items list.')] = None,
     dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
     """Update an item (PUT read-modify-write). Setting collection_id moves it.
@@ -745,6 +786,7 @@ def update_item(
         visibility: Visibility value as used by Koillection, e.g. public or private.
         collection_id: Collection UUID or IRI like /api/collections/<uuid>.
         tag_ids: Tag UUIDs or IRIs to attach.
+        related_item_ids: Related item UUIDs or IRIs to set; replaces the current related-items list.
         dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
     """
     try:
@@ -758,6 +800,9 @@ def update_item(
                 "visibility": visibility,
                 "collection": _iri(collection_id, "collections") if collection_id else None,
                 "tags": [_iri(t, "tags") for t in tag_ids] if tag_ids is not None else None,
+                "relatedItems": [_iri(t, "items") for t in related_item_ids]
+                if related_item_ids is not None
+                else None,
             }
         )
         if not updates:
@@ -878,6 +923,105 @@ def delete_item_data(item_id: Annotated[str, Field(description='Item UUID or IRI
                             f"Delete data '{label}' from item {item_path}.")
         client.delete(datum_path)
         return _applied("delete_item_data", {"item": item_path, "label": label})
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@tool("create")
+def upload_item_image(
+    item_id: Annotated[str, Field(description='Item UUID or IRI like /api/items/<uuid>.')],
+    image_path: Annotated[str, Field(description='Absolute or relative path to a local JPG, PNG, GIF, or WebP file on the machine running this MCP server.')],
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
+) -> str:
+    """Upload a local image file as an item's main image.
+
+    Args:
+        item_id: Item UUID or IRI like /api/items/<uuid>.
+        image_path: Path to a local JPG, PNG, GIF, or WebP file.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+
+    Returns:
+        Preview or applied result with file metadata; image bytes are never returned or logged.
+    """
+    try:
+        client = get_client()
+        item_path = _id_or_iri(item_id, "items")
+        item = client.get(item_path)
+        file_info = _image_file_info(image_path)
+        target_path = f"{item_path}/image"
+        if dry_run:
+            return _preview(
+                "upload_item_image", "POST", target_path,
+                {"multipart_field": "file", "file": file_info},
+                f"Upload '{file_info['filename']}' as the main image of '{item.get('name')}'.",
+            )
+        uploaded = client.post_multipart(target_path, str(file_info["path"]))
+        result = _summarize_item(uploaded) if isinstance(uploaded, dict) else _summarize_item(item)
+        return _applied("upload_item_image", result, extra={"file": file_info})
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@tool("create")
+def upload_item_data_image(
+    item_id: Annotated[str, Field(description='Item UUID or IRI like /api/items/<uuid>.')],
+    label: Annotated[str, Field(description="Image data label, matched exactly, e.g. 'Front Image'.")],
+    image_path: Annotated[str, Field(description='Absolute or relative path to a local JPG, PNG, GIF, or WebP file on the machine running this MCP server.')],
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
+) -> str:
+    """Upload a local image into an item's image data field, creating it by label if needed.
+
+    Args:
+        item_id: Item UUID or IRI like /api/items/<uuid>.
+        label: Image data label, matched exactly, e.g. 'Front Image'.
+        image_path: Path to a local JPG, PNG, GIF, or WebP file.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+
+    Returns:
+        Preview or applied result with the datum summary and file metadata; image bytes are never returned or logged.
+    """
+    try:
+        client = get_client()
+        item_path = _id_or_iri(item_id, "items")
+        client.get(item_path)
+        file_info = _image_file_info(image_path)
+        data = client.get_all_members(f"{item_path}/data")
+        existing = next((d for d in data if d.get("label") == label), None)
+        if existing and existing.get("type") != "image":
+            return dumps(
+                {
+                    "error": "ValidationError",
+                    "message": f"Item already has a non-image data field labelled '{label}' ({existing.get('type')}).",
+                }
+            )
+        if existing:
+            datum_path = _iri(str(existing.get("id") or existing.get("@id")), "data")
+            mode = "existing datum"
+        else:
+            datum_path = "/api/data (new image datum), then /api/data/<id>/image"
+            mode = "new datum"
+        if dry_run:
+            return _preview(
+                "upload_item_data_image", "POST", datum_path,
+                {"label": label, "type": "image", "multipart_field": "fileImage", "file": file_info},
+                f"Upload '{file_info['filename']}' to image field '{label}' ({mode}) on item {item_path}.",
+            )
+        if existing:
+            datum_id = str(existing.get("id") or existing.get("@id"))
+        else:
+            created = client.post(
+                "/api/data",
+                {"item": _iri(item_id, "items"), "type": "image", "label": label, "value": None},
+            )
+            datum_id = str(created.get("id") or created.get("@id"))
+            datum_path = _iri(datum_id, "data")
+        client.post_multipart(f"{datum_path}/image", str(file_info["path"]), field_name="fileImage")
+        datum = client.get(datum_path)
+        return _applied(
+            "upload_item_data_image",
+            _summarize_datum(datum),
+            extra={"file": file_info, "mode": mode},
+        )
     except KoillectionError as exc:
         return _err(exc)
 

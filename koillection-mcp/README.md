@@ -24,7 +24,12 @@ uv run koillection-mcp
 ```bash
 uv run python scripts/smoke_readonly.py      # read-only auth + listing smoke
 uv run python scripts/test_crud_sandbox.py   # full CRUD lifecycle on a throwaway collection (self-cleaning)
+uv run python scripts/test_resources_prompts.py  # tool count (33), Args descriptions, resources, prompts
+uv run python scripts/import_state_territories_quarters.py          # dry-run preview of the quarters import
+uv run python scripts/import_state_territories_quarters.py --apply  # resumable import (dedupe by item name)
 ```
+
+The quarters import is driven by `data/state-territories-quarters/manifest.json` (56 designs × P/D, gitignored with its staged images): TreasureRealm + Wikipedia + CoinNews data, public-domain U.S. Mint images via Wikimedia Commons.
 
 ## Cursor MCP config
 
@@ -75,10 +80,10 @@ Updates are PUT read-modify-write: the server GETs the current object, merges on
 | `list_items` / `get_item` / `search_items` | Items (get_item includes data fields) |
 
 ### Create
-`create_collection` (parent_id → subcollection), `create_item` (with `data` fields), `set_item_data` (upsert by label), `create_template`, `copy_template` (clone fields with drop/rename/retype/add in one dry-run preview), `create_field`, `create_tag`
+`create_collection` (parent_id → subcollection), `create_item` (with `data` fields), `set_item_data` (upsert by label), `create_template`, `copy_template` (clone fields with drop/rename/retype/add in one dry-run preview), `create_field`, `create_tag`, `upload_item_image` (local file → item main image, multipart), `upload_item_data_image` (local file → an item's image data field by label, created if missing; multipart field `fileImage`)
 
 ### Update
-`update_collection`, `update_item`, `update_template`, `update_field`, `update_tag` — all PUT read-modify-write; setting a parent/collection moves the object.
+`update_collection`, `update_item` (incl. `related_item_ids`; relations are **not** mirrored by the API — set both directions), `update_template`, `update_field`, `update_tag` — all PUT read-modify-write; setting a parent/collection moves the object.
 
 ### Delete
 `delete_collection`, `delete_item`, `delete_item_data`, `delete_template`, `delete_field`, `delete_tag` — confirm-name required; collections cascade.
@@ -111,4 +116,4 @@ Every tool call appends one JSON record to `logs/calls.jsonl` (gitignored; overr
 
 ## Instance notes
 
-Default base URL: `http://192.168.86.31:3120` (Koillection on `tertius`, port 3120). API version verified as 1.8.4. Known API quirks: item metadata is separate `/api/data` calls (one per field); `GET /api/collections/{id}/items` returns `[]` for a deleted collection instead of 404.
+Default base URL: `http://192.168.86.31:3120` (Koillection on `tertius`, port 3120). API version verified as 1.8.4. Known API quirks: item metadata is separate `/api/data` calls (one per field); `GET /api/collections/{id}/items` returns `[]` for a deleted collection instead of 404; image uploads are POST-only multipart (item main image field `file`, datum image field `fileImage`); item reads don't embed `relatedItems` (use `GET /api/items/{id}/related_items`) and relations are not mirrored automatically.

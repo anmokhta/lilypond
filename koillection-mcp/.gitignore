@@ -16,3 +16,6 @@ wheels/
 
 # Call history
 logs/
+
+# Generated datasets and staged images (manifest, downloads)
+data/
