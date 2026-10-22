@@ -75,23 +75,25 @@ def validate(manifest: dict) -> list[dict]:
 
 
 def item_name(design: dict, mint: str) -> str:
-    return f"{design['coin_number']:03d} — {design['jurisdiction']} — {design['release_year']}-{mint}"
+    # Display format chosen by Andrew 2026-10-21, e.g. "Delaware P (1999)".
+    return f"{design['jurisdiction']} {mint} ({design['release_year']})"
 
 
 def build_data(design: dict, mint: str, specs: dict, field_types: dict[str, str],
-               field_positions: dict[str, int]) -> list[dict]:
+               field_positions: dict[str, int],
+               field_choice_lists: dict[str, str] | None = None) -> list[dict]:
+    field_choice_lists = field_choice_lists or {}
     values: dict[str, str] = {
         "Owned": "0",
-        "Denomination": specs["denomination"],
+        "Coin Type": "Quarter",
         "Country": specs["country"],
-        "Series / Design": design["program"],
         "Program": design["program"],
+        "State / Subject": design["jurisdiction"],
         "Year": str(design["release_year"]),
         "Mint Mark": mint,
         "Mint Facility": MINT_FACILITY[mint],
         "Finish": specs["finish"],
         "Material / Composition": specs["material"],
-        "Proof": "0",
         "Graded": "0",
         "Grade": "",
         "Grading Service": "",
@@ -105,9 +107,7 @@ def build_data(design: dict, mint: str, specs: dict, field_types: dict[str, str]
         "Source URL": design["reference_url"],
         "Notes": "",
         "Coin Number": str(design["coin_number"]),
-        "Jurisdiction": design["jurisdiction"],
         "Jurisdiction Type": design["jurisdiction_type"],
-        "Release Year": str(design["release_year"]),
         "Release Order": str(design["release_order"]),
         "Release Date": design["release_date"],
         "Obverse Portrait": design["obverse"]["portrait"],
@@ -122,12 +122,15 @@ def build_data(design: dict, mint: str, specs: dict, field_types: dict[str, str]
     for label, value in values.items():
         if label not in field_types:
             continue
-        entries.append({
+        entry = {
             "label": label,
             "type": field_types[label],
             "value": value,
             "position": field_positions.get(label),
-        })
+        }
+        if field_choice_lists.get(label):
+            entry["choiceList"] = field_choice_lists[label]
+        entries.append(entry)
     return entries
 
 
@@ -165,6 +168,7 @@ def main() -> int:
         return 1
     field_types = {f["name"]: f["type"] for f in fields}
     field_positions = {f["name"]: f.get("position") for f in fields}
+    field_choice_lists = {f["name"]: f["choiceList"] for f in fields if f.get("choiceList")}
     specs = manifest["coin_specs"]
 
     existing = {i["name"]: i["id"] for i in parse(list_items(collection_id))}
@@ -183,7 +187,7 @@ def main() -> int:
         reverse_path = IMAGES_DIR / design["reverse"]["local_image"]["file"]
         for mint in ("P", "D"):
             name = item_name(design, mint)
-            entries = build_data(design, mint, specs, field_types, field_positions)
+            entries = build_data(design, mint, specs, field_types, field_positions, field_choice_lists)
             obverse_path = IMAGES_DIR / manifest["obverse_images_by_mint"][mint]["local"]["file"]
             item_id = existing.get(name)
             if item_id:
@@ -195,7 +199,8 @@ def main() -> int:
                     if apply:
                         for e in missing:
                             r = parse(set_item_data(item_id, e["label"], e["type"], e["value"],
-                                                    position=e.get("position"), dry_run=False))
+                                                    position=e.get("position"),
+                                                    choice_list_id=e.get("choiceList"), dry_run=False))
                             if "error" in r:
                                 report["errors"].append(f"{name}: set {e['label']}: {r.get('message')}")
                         report["filled"].append(name)
