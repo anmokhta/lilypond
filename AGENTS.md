@@ -79,7 +79,7 @@ uv run python scripts/test_crud_sandbox.py    # writes: full lifecycle on _MCP C
 uv run python scripts/test_resources_prompts.py  # Args descriptions, resources, prompts
 ```
 
-Plus: confirm the tool count via `mcp.list_tools()` (33 as of 2026-10-20, incl. `upload_item_image` / `upload_item_data_image`) after registration changes, and spot-check `get_call_history` after write-path changes.
+Plus: confirm the tool count via `mcp.list_tools()` (36 as of 2026-10-21, incl. `list_choice_lists` / `create_choice_list` / `delete_choice_list`) after registration changes, and spot-check `get_call_history` after write-path changes.
 
 Template patterns: `get_collection_template` resolves a collection's **own** default (Koillection has no parent inheritance — report `null`, never walk up). `copy_template` is the MCP-emulated clone (Koillection has no clone API): one dry-run diff (drop/rename/retype/add) before applying, new field records so copies are independent, partial-failure reporting instead of silent continuation.
 
@@ -100,6 +100,8 @@ Audit of the current server against the build-server guide. Gaps are follow-ups;
 | 9 | `ToolAnnotations` built with camelCase keys; accepted by `mcp-types` 2.3 via aliases | **Gap (minor)** — switch to snake_case field names |
 | 10 | `pyproject.toml` description still says "Read-only MCP server" | **Gap (minor)** — update wording |
 
+Note (2026-10-21): choice-list tools (`list_choice_lists`, `create_choice_list`, `delete_choice_list`, plus `choice_list_id` on `create_field`/`set_item_data`) follow the same audited patterns (items 1–6, 9); no new gaps introduced. Tool count 36.
+
 ## Koillection API facts (verified)
 
 - Base: `http://192.168.86.31:3120`; OpenAPI 1.8.4 at `/api/docs.json`; human docs at `/api`.
@@ -108,6 +110,7 @@ Audit of the current server against the build-server guide. Gaps are follow-ups;
 - Content rules: JSON generally; uploads POST-only `multipart/form-data` (item main image field `file`; datum image field `fileImage` — verified 2026-10-20); PUT preferred over PATCH.
 - Item reads do not embed `relatedItems` or tags; relations live at `GET /api/items/{id}/related_items` and are **not mirrored** — set both directions explicitly (verified 2026-10-20).
 - Limits: no admin features, no sharing access — calls act as the logged-in user (`anmokhta`, decided 2026-10-20 as the MCP user). Checkbox values are `"0"`/`"1"`; `/api/collections/{id}/items` returns `[]` for deleted collections.
+- Choice lists: `/api/choice_lists` (`name` + `choices[]`); a `choice-list` field/datum binds one static list via a `choiceList` IRI — no conditional logic. Datum values must be valid JSON array strings (verified 2026-10-21).
 
 ## Design decisions (settled)
 
@@ -115,6 +118,9 @@ Audit of the current server against the build-server guide. Gaps are follow-ups;
 2. Setup and import are separate workflows; import-style tools read field definitions at run time and never hard-code field names (2026-10-18).
 3. MCP runs as the `anmokhta` user; a dedicated user would see none of the existing data (2026-10-20).
 4. Coin versions are separate items linked P↔D via Related Items; the 50 states + 2009 DC/Territories share one subcollection (`State & Territories Quarters`) and one unified program template, circulating P/D strikes only (2026-10-20).
+5. One global `Coin Type` choice list (`Penny (Cent)`, `Nickel`, `Dime`, `Quarter`, `Half Dollar`, `Dollar`, `Other`) on every coin template, alongside free-text `Denomination` — Koillection choice lists are static per-field, with no country-conditional/cascading lists and no ancestry-based defaulting, so one global list is the approximation (2026-10-21). Choice-list datum values are stored as JSON array strings (e.g. `["Quarter"]`, verified 2026-10-21); a choice list cannot be deleted while item data references it.
+6. `US Quarter` is the master template for all US quarter groups (30 fields, design block included); `State & Territories Quarters` (35 fields) is its specialization on the same ordered spine. On the quarter templates the duplicates were dropped — `Denomination` (= `Coin Type`; supersedes decision 5's coexistence for quarters only), `Series / Design` (= `Program`), `Release Year`, `Proof` (= `Finish`) — and `Jurisdiction` was unified into `State / Subject`; constants stay per-item. Item datum order is independent of template field order and must be re-positioned separately; image data re-positions via raw read-modify-write datum PUT, not `set_item_data` (2026-10-21).
+7. Grading is choice-list based on every coin template: `Grade` = `1`–`8`, `8.5`, `9`, `9.5`, `10`; `Grading Service` = `PCGS`, `NGC`, `ANACS`, `Other`; `Condition` = the standard numismatic scale (`Poor` … `Proof`). An ungraded item stores the trio as empty selections (`[]`) (2026-10-21).
 
 ## Safety constraints
 

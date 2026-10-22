@@ -24,7 +24,7 @@ uv run koillection-mcp
 ```bash
 uv run python scripts/smoke_readonly.py      # read-only auth + listing smoke
 uv run python scripts/test_crud_sandbox.py   # full CRUD lifecycle on a throwaway collection (self-cleaning)
-uv run python scripts/test_resources_prompts.py  # tool count (33), Args descriptions, resources, prompts
+uv run python scripts/test_resources_prompts.py  # tool count (36), Args descriptions, resources, prompts
 uv run python scripts/import_state_territories_quarters.py          # dry-run preview of the quarters import
 uv run python scripts/import_state_territories_quarters.py --apply  # resumable import (dedupe by item name)
 ```
@@ -74,19 +74,19 @@ Updates are PUT read-modify-write: the server GETs the current object, merges on
 | `whoami` | Which user the JWT is |
 | `get_call_history` | Recent entries from the JSONL call log |
 | `list_collections` / `get_collection` | Collections (+ children) |
-| `list_templates` / `list_fields` / `list_tags` | Structure |
+| `list_templates` / `list_fields` / `list_tags` / `list_choice_lists` | Structure |
 | `get_template` | One template + position-sorted fields |
 | `get_collection_template` | A collection's own default template + fields (explicit `null` when unset — Koillection has **no parent inheritance**) |
 | `list_items` / `get_item` / `search_items` | Items (get_item includes data fields) |
 
 ### Create
-`create_collection` (parent_id → subcollection), `create_item` (with `data` fields), `set_item_data` (upsert by label), `create_template`, `copy_template` (clone fields with drop/rename/retype/add in one dry-run preview), `create_field`, `create_tag`, `upload_item_image` (local file → item main image, multipart), `upload_item_data_image` (local file → an item's image data field by label, created if missing; multipart field `fileImage`)
+`create_collection` (parent_id → subcollection), `create_item` (with `data` fields), `set_item_data` (upsert by label; `choice_list_id` for choice-list data — pass a plain choice name, stored as the JSON array string the API requires), `create_template`, `copy_template` (clone fields with drop/rename/retype/add in one dry-run preview), `create_field` (`choice_list_id` required for `choice-list` fields), `create_choice_list`, `create_tag`, `upload_item_image` (local file → item main image, multipart), `upload_item_data_image` (local file → an item's image data field by label, created if missing; multipart field `fileImage`)
 
 ### Update
-`update_collection`, `update_item` (incl. `related_item_ids`; relations are **not** mirrored by the API — set both directions), `update_template`, `update_field`, `update_tag` — all PUT read-modify-write; setting a parent/collection moves the object.
+`update_collection`, `update_item` (incl. `related_item_ids`; relations are **not** mirrored by the API — set both directions), `update_template`, `update_field` (incl. `choice_list_id` to bind/retype `choice-list` fields), `update_tag` — all PUT read-modify-write; setting a parent/collection moves the object.
 
 ### Delete
-`delete_collection`, `delete_item`, `delete_item_data`, `delete_template`, `delete_field`, `delete_tag` — confirm-name required; collections cascade.
+`delete_collection`, `delete_item`, `delete_item_data`, `delete_template`, `delete_field`, `delete_tag`, `delete_choice_list` — confirm-name required; collections cascade. (A choice list can only be deleted once no item data references it.)
 
 ## Resources (read-only, `application/json`)
 
@@ -116,4 +116,4 @@ Every tool call appends one JSON record to `logs/calls.jsonl` (gitignored; overr
 
 ## Instance notes
 
-Default base URL: `http://192.168.86.31:3120` (Koillection on `tertius`, port 3120). API version verified as 1.8.4. Known API quirks: item metadata is separate `/api/data` calls (one per field); `GET /api/collections/{id}/items` returns `[]` for a deleted collection instead of 404; image uploads are POST-only multipart (item main image field `file`, datum image field `fileImage`); item reads don't embed `relatedItems` (use `GET /api/items/{id}/related_items`) and relations are not mirrored automatically.
+Default base URL: `http://192.168.86.31:3120` (Koillection on `tertius`, port 3120). API version verified as 1.8.4. Known API quirks: item metadata is separate `/api/data` calls (one per field); `GET /api/collections/{id}/items` returns `[]` for a deleted collection instead of 404; image uploads are POST-only multipart (item main image field `file`, datum image field `fileImage`); item reads don't embed `relatedItems` (use `GET /api/items/{id}/related_items`) and relations are not mirrored automatically; choice-list datum values must be valid JSON (stored as e.g. `["Quarter"]` — verified 2026-10-21).
