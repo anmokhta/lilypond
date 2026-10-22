@@ -15,11 +15,13 @@ from pathlib import Path
 
 from koillection_mcp.server import (
     copy_template,
+    create_choice_list,
     create_collection,
     create_field,
     create_item,
     create_tag,
     create_template,
+    delete_choice_list,
     delete_collection,
     delete_field,
     delete_item,
@@ -31,6 +33,7 @@ from koillection_mcp.server import (
     get_collection_template,
     get_item,
     get_template,
+    list_choice_lists,
     list_items,
     list_templates,
     set_item_data,
@@ -87,6 +90,36 @@ def main() -> int:
     name_f = parse(create_field(template_id, "Note", "text", position=1, dry_run=False))
     check("create text field", name_f.get("applied") is True)
     note_field_id = name_f["result"]["id"]
+
+    # --- choice lists -------------------------------------------------------
+    cl_preview = parse(create_choice_list("Sandbox Kinds", ["Alpha", "Beta"]))
+    check("create_choice_list dry-run", cl_preview.get("dry_run") is True and cl_preview.get("applied") is False)
+    choice_list = parse(create_choice_list("Sandbox Kinds", ["Alpha", "Beta"], dry_run=False))
+    check("create_choice_list", choice_list.get("applied") is True, json.dumps(choice_list)[:300])
+    choice_list_id = choice_list["result"]["id"]
+    lists = parse(list_choice_lists())
+    check("list_choice_lists contains sandbox", any(cl.get("id") == choice_list_id and cl.get("choices") == ["Alpha", "Beta"] for cl in lists if isinstance(cl, dict)), json.dumps(lists)[:300])
+    bad_field = parse(create_field(template_id, "Bad Kind", "choice-list", position=9))
+    check("create_field choice-list requires list", "error" in bad_field, json.dumps(bad_field)[:200])
+    bad_field2 = parse(create_field(template_id, "Bad Kind 2", "text", position=9, choice_list_id=choice_list_id))
+    check("create_field choice_list_id rejected for text", "error" in bad_field2, json.dumps(bad_field2)[:200])
+    choice_template = parse(create_template("Sandbox Choice Template", dry_run=False))
+    check("create choice template", choice_template.get("applied") is True, json.dumps(choice_template)[:300])
+    choice_template_id = choice_template["result"]["id"]
+    kind_field = parse(create_field(choice_template_id, "Sandbox Kind", "choice-list", position=0, choice_list_id=choice_list_id, dry_run=False))
+    check("create choice-list field", kind_field.get("applied") is True and bool(kind_field["result"].get("choiceList")), json.dumps(kind_field)[:300])
+    kind_field_id = kind_field["result"]["id"]
+
+    # convert a text field to choice-list via update_field
+    grade_list = parse(create_choice_list("Sandbox Grades", ["1", "8.5", "9.5", "10"], dry_run=False))
+    check("create grade list", grade_list.get("applied") is True, json.dumps(grade_list)[:300])
+    grade_list_id = grade_list["result"]["id"]
+    grade_text = parse(create_field(choice_template_id, "Sandbox Grade", "text", position=1, dry_run=False))
+    grade_field_id = grade_text["result"]["id"]
+    bad_conv = parse(update_field(grade_field_id, type="choice-list", dry_run=False))
+    check("update_field to choice-list requires list", "error" in bad_conv, json.dumps(bad_conv)[:200])
+    converted = parse(update_field(grade_field_id, type="choice-list", choice_list_id=grade_list_id, dry_run=False))
+    check("update_field converts to choice-list", converted.get("applied") is True and converted["result"].get("type") == "choice-list" and bool(converted["result"].get("choiceList")), json.dumps(converted)[:300])
 
     tag = parse(create_tag("sandbox-tag", description="crud test", dry_run=False))
     check("create_tag", tag.get("applied") is True, json.dumps(tag)[:300])
@@ -160,6 +193,27 @@ def main() -> int:
     view = parse(get_item(item1_id))
     owned_row = next((d for d in view["data"] if d["label"] == "Owned"), {})
     check("owned flipped to 1", str(owned_row.get("value")) == "1", json.dumps(owned_row)[:200])
+
+    kind = parse(set_item_data(item1_id, "Sandbox Kind", "choice-list", "Alpha", choice_list_id=choice_list_id, dry_run=False))
+    check("set_item_data choice-list create", kind.get("applied") and kind.get("mode") == "created", json.dumps(kind)[:300])
+    view = parse(get_item(item1_id))
+    kind_row = next((d for d in view["data"] if d["label"] == "Sandbox Kind"), {})
+    check("choice-list datum stored", json.loads(str(kind_row.get("value") or "[]")) == ["Alpha"] and bool(kind_row.get("choiceList")), json.dumps(kind_row)[:300])
+    kind_upd = parse(set_item_data(item1_id, "Sandbox Kind", "choice-list", "Beta", dry_run=False))
+    check("set_item_data choice-list upsert keeps list", kind_upd.get("mode") == "updated", json.dumps(kind_upd)[:300])
+    view = parse(get_item(item1_id))
+    kind_row = next((d for d in view["data"] if d["label"] == "Sandbox Kind"), {})
+    check("choice-list datum updated", json.loads(str(kind_row.get("value") or "[]")) == ["Beta"] and bool(kind_row.get("choiceList")), json.dumps(kind_row)[:300])
+
+    graded = parse(set_item_data(item1_id, "Sandbox Grade", "choice-list", "9.5", choice_list_id=grade_list_id, dry_run=False))
+    check("set_item_data graded value", graded.get("applied") and graded.get("mode") == "created", json.dumps(graded)[:300])
+    empty_choice = parse(set_item_data(item1_id, "Sandbox Service", "choice-list", "", choice_list_id=grade_list_id, dry_run=False))
+    check("set_item_data empty choice", empty_choice.get("applied") is True, json.dumps(empty_choice)[:300])
+    view = parse(get_item(item1_id))
+    grade_row = next((d for d in view["data"] if d["label"] == "Sandbox Grade"), {})
+    svc_row = next((d for d in view["data"] if d["label"] == "Sandbox Service"), {})
+    check("graded datum stored", json.loads(str(grade_row.get("value") or "[]")) == ["9.5"], json.dumps(grade_row)[:300])
+    check("empty choice datum stored as []", str(svc_row.get("value")) == "[]", json.dumps(svc_row)[:300])
 
     add = parse(set_item_data(item1_id, "Location", "text", "Shelf A", dry_run=False))
     check("set_item_data create mode", add.get("mode") == "created")
@@ -270,9 +324,23 @@ def main() -> int:
     check("delete_tag", gone_tag.get("applied") is True)
     gone_template = parse(delete_template(template_id, confirm_name="Sandbox Template v2", dry_run=False))
     check("delete_template", gone_template.get("applied") is True)
+    bad_cl = parse(delete_choice_list(choice_list_id, confirm_name="Wrong Name", dry_run=False))
+    check("delete_choice_list rejects bad confirm", "error" in bad_cl)
+    gone_kind_field = parse(delete_field(kind_field_id, confirm_name="Sandbox Kind", dry_run=False))
+    check("delete choice-list field", gone_kind_field.get("applied") is True)
+    gone_grade_field = parse(delete_field(grade_field_id, confirm_name="Sandbox Grade", dry_run=False))
+    check("delete converted grade field", gone_grade_field.get("applied") is True)
+    gone_choice_template = parse(delete_template(choice_template_id, confirm_name="Sandbox Choice Template", dry_run=False))
+    check("delete choice template", gone_choice_template.get("applied") is True)
 
     gone = parse(delete_collection(sandbox_id, confirm_title="_MCP CRUD TEST", dry_run=False))
     check("delete_collection cascade", gone.get("applied") is True, json.dumps(gone)[:300])
+
+    # choice list can only be deleted once referencing item data is gone (collection cascade above)
+    gone_cl = parse(delete_choice_list(choice_list_id, confirm_name="Sandbox Kinds", dry_run=False))
+    check("delete_choice_list", gone_cl.get("applied") is True, json.dumps(gone_cl)[:300])
+    gone_gl = parse(delete_choice_list(grade_list_id, confirm_name="Sandbox Grades", dry_run=False))
+    check("delete grade list", gone_gl.get("applied") is True, json.dumps(gone_gl)[:300])
 
     from koillection_mcp.server import list_collections, search_items
 

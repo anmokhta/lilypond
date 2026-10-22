@@ -48,7 +48,7 @@ def _text(result) -> str:
 
 async def main() -> int:
     tools = await mcp.list_tools()
-    check("tool count is 33", len(tools) == 33, str(len(tools)))
+    check("tool count is 36", len(tools) == 36, str(len(tools)))
     missing = [
         f"{t.name}.{name}"
         for t in tools
@@ -77,11 +77,11 @@ async def main() -> int:
 
     collections = json.loads(_text(await mcp.read_resource("koillection://collections")))
     check("collections resource parses", isinstance(collections, list) and len(collections) >= 1)
-    coins = next((c for c in collections if c.get("title") == "COINS"), None)
+    coins = next((c for c in collections if c.get("title") in ("COINS", "_Coins")), None)
     check("COINS found in resource", coins is not None)
     if coins:
         detail = json.loads(_text(await mcp.read_resource(f"koillection://collections/{coins['id']}")))
-        check("collection template resource", detail.get("collection", {}).get("title") == "COINS")
+        check("collection template resource", detail.get("collection", {}).get("title") in ("COINS", "_Coins"))
         items = json.loads(_text(await mcp.read_resource(f"koillection://collections/{coins['id']}/items")))
         check("collection items resource", isinstance(items, list))
 

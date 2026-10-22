@@ -134,6 +134,28 @@ def _clean(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if v is not None}
 
 
+def _normalize_choice_value(value: Any) -> str:
+    """Koillection choice-list datum values must be valid JSON (verified 2026-10-21).
+
+    Accept a plain choice name ('Quarter') or an already-JSON list
+    ('["Quarter"]') and always return a JSON array string ('["Quarter"]').
+    """
+    import json as _json
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return "[]"
+    if isinstance(value, (list, tuple)):
+        return _json.dumps([str(v) for v in value])
+    text = str(value)
+    try:
+        parsed = _json.loads(text)
+    except ValueError:
+        return _json.dumps([text])
+    if isinstance(parsed, list):
+        return _json.dumps([str(v) for v in parsed])
+    return _json.dumps([str(parsed)])
+
+
 def _summarize_collection(c: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": c.get("id") or c.get("@id"),
@@ -168,6 +190,7 @@ def _summarize_datum(d: dict[str, Any]) -> dict[str, Any]:
         "imageSmallThumbnail": d.get("imageSmallThumbnail"),
         "imageLargeThumbnail": d.get("imageLargeThumbnail"),
         "originalFilename": d.get("originalFilename"),
+        "choiceList": d.get("choiceList"),
         "position": d.get("position"),
         "item": d.get("item"),
         "collection": d.get("collection"),
@@ -441,6 +464,7 @@ def list_fields(template_id: Annotated[str | None, Field(description='Template U
                     "position": f.get("position"),
                     "template": f.get("template"),
                     "visibility": f.get("visibility"),
+                    "choiceList": f.get("choiceList"),
                 }
                 for f in fields
             ]
@@ -469,6 +493,78 @@ def list_tags() -> str:
                 for t in tags
             ]
         )
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+def _summarize_choice_list(cl: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": cl.get("id") or cl.get("@id"),
+        "name": cl.get("name"),
+        "choices": cl.get("choices"),
+    }
+
+
+@tool("read")
+def list_choice_lists() -> str:
+    """List choice lists (static option lists for choice-list fields).
+
+    Args:
+    """
+    try:
+        lists = get_client().get_all_members("/api/choice_lists")
+        return dumps([_summarize_choice_list(cl) for cl in lists])
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@tool("create")
+def create_choice_list(
+    name: Annotated[str, Field(description='Choice list name.')],
+    choices: Annotated[list[str], Field(description='Ordered list of choice values.')],
+    dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
+) -> str:
+    """Create a choice list that choice-list fields and data can bind to.
+
+    Args:
+        name: Choice list name.
+        choices: Ordered list of choice values.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
+    payload = {"name": name, "choices": list(choices)}
+    if dry_run:
+        return _preview("create_choice_list", "POST", "/api/choice_lists", payload,
+                        f"Create choice list '{name}' with {len(choices)} choice(s).")
+    try:
+        created = get_client().post("/api/choice_lists", payload)
+        return _applied("create_choice_list", _summarize_choice_list(created))
+    except KoillectionError as exc:
+        return _err(exc)
+
+
+@tool("delete")
+def delete_choice_list(choice_list_id: Annotated[str, Field(description='Choice list UUID or IRI like /api/choice_lists/<uuid>.')], confirm_name: Annotated[str, Field(description='Must exactly match the current name/label, or the delete is refused.')], dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True) -> str:
+    """Delete a choice list. Requires confirm_name exactly matching its name.
+
+    Args:
+        choice_list_id: Choice list UUID or IRI like /api/choice_lists/<uuid>.
+        confirm_name: Must exactly match the current name/label, or the delete is refused.
+        dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
+    """
+    try:
+        client = get_client()
+        path = _id_or_iri(choice_list_id, "choice_lists")
+        raw = client.get(path)
+        name = raw.get("name")
+        if dry_run:
+            return _preview("delete_choice_list", "DELETE", path, None,
+                            f"Delete choice list '{name}'. Fields/data bound to it may be affected.",
+                            extra={"expected_confirm_name": name})
+        if confirm_name != name:
+            return dumps({"error": "ConfirmationMismatch",
+                          "message": f"confirm_name must exactly match '{name}'."})
+        client.delete(path)
+        return _applied("delete_choice_list", {"id": choice_list_id, "name": name})
     except KoillectionError as exc:
         return _err(exc)
 
@@ -712,7 +808,7 @@ def create_item(
     quantity: Annotated[int | None, Field(description='How many of this item are owned.')] = None,
     visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
     tag_ids: Annotated[list[str] | None, Field(description='Tag UUIDs or IRIs to attach.')] = None,
-    data: Annotated[list[dict[str, Any]] | None, Field(description='List of {label, type, value, position?} entries; one /api/data record is created per entry.')] = None,
+    data: Annotated[list[dict[str, Any]] | None, Field(description='List of {label, type, value, position?, choiceList?} entries; one /api/data record is created per entry. For choice-list entries, choiceList is the choice list UUID or IRI.')] = None,
     dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
     """Create an item in a collection, then one data field per `data` entry.
@@ -723,7 +819,7 @@ def create_item(
         quantity: How many of this item are owned.
         visibility: Visibility value as used by Koillection, e.g. public or private.
         tag_ids: Tag UUIDs or IRIs to attach.
-        data: List of {label, type, value, position?} entries; one /api/data record is created per entry.
+        data: List of {label, type, value, position?, choiceList?} entries; one /api/data record is created per entry. For choice-list entries, choiceList is the choice list UUID or IRI.
         dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
     """
     collection_iri = _iri(collection_id, "collections")
@@ -741,9 +837,14 @@ def create_item(
             {
                 "type": entry.get("type"),
                 "label": entry.get("label"),
-                "value": entry.get("value"),
+                "value": _normalize_choice_value(entry.get("value"))
+                if entry.get("type") == "choice-list" and entry.get("value") is not None
+                else entry.get("value"),
                 "position": entry.get("position"),
                 "visibility": entry.get("visibility"),
+                "choiceList": _iri(str(entry["choiceList"] or entry["choice_list_id"]), "choice_lists")
+                if (entry.get("choiceList") or entry.get("choice_list_id"))
+                else None,
             }
         )
         for entry in (data or [])
@@ -854,6 +955,7 @@ def set_item_data(
     value: Annotated[str, Field(description="Value as a string. Checkbox uses '0' or '1'; dates use YYYY-MM-DD; lists use a JSON string.")],
     position: Annotated[int | None, Field(description='Sort position within the template/item (lower first).')] = None,
     visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    choice_list_id: Annotated[str | None, Field(description='Choice list UUID or IRI like /api/choice_lists/<uuid>. Required for choice-list data unless the existing datum already has one.')] = None,
     dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
     """Create or update one data field on an item, matched by label (upsert).
@@ -861,20 +963,27 @@ def set_item_data(
     Args:
         item_id: Item UUID or IRI like /api/items/<uuid>.
         label: Data/tag label. For item data this is the field label, matched exactly.
-        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.
-        value: Value as a string. Checkbox uses '0' or '1'; dates use YYYY-MM-DD; lists use a JSON string.
+        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list, choice-list.
+        value: Value as a string. Checkbox uses '0' or '1'; dates use YYYY-MM-DD; lists use a JSON string. For choice-list, pass a plain choice name (e.g. Quarter); it is stored as a JSON array string as the API requires.
         position: Sort position within the template/item (lower first).
         visibility: Visibility value as used by Koillection, e.g. public or private.
+        choice_list_id: Choice list UUID or IRI like /api/choice_lists/<uuid>. Required for choice-list data unless the existing datum already has one.
         dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
     """
+    if choice_list_id and type != "choice-list":
+        return dumps({"error": "ValidationError", "message": "choice_list_id is only valid when type is 'choice-list'."})
     try:
         client = get_client()
         item_path = _id_or_iri(item_id, "items")
         data = client.get_all_members(f"{item_path}/data")
         existing = next((d for d in data if d.get("label") == label), None)
+        if type == "choice-list" and not choice_list_id and not (existing and existing.get("choiceList")):
+            return dumps({"error": "ValidationError", "message": "choice_list_id is required for choice-list data."})
+        choice_list_iri = _iri(choice_list_id, "choice_lists") if choice_list_id else None
+        stored_value = _normalize_choice_value(value) if type == "choice-list" else value
         if existing:
             datum_path = _iri(str(existing.get("id") or existing.get("@id")), "data")
-            updates = _clean({"type": type, "value": value, "position": position, "visibility": visibility})
+            updates = _clean({"type": type, "value": stored_value, "position": position, "visibility": visibility, "choiceList": choice_list_iri})
             payload = _put_payload(existing, _DATUM_WRITE_KEYS, updates)
             payload.setdefault("item", _iri(item_id, "items"))
             if dry_run:
@@ -887,9 +996,10 @@ def set_item_data(
                 "item": _iri(item_id, "items"),
                 "type": type,
                 "label": label,
-                "value": value,
+                "value": stored_value,
                 "position": position,
                 "visibility": visibility,
+                "choiceList": choice_list_iri,
             }
         )
         if dry_run:
@@ -1255,9 +1365,10 @@ def delete_template(template_id: Annotated[str, Field(description='Template UUID
 def create_field(
     template_id: Annotated[str, Field(description='Template UUID or IRI like /api/templates/<uuid>.')],
     name: Annotated[str, Field(description='Display name.')],
-    type: Annotated[str, Field(description='Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.')],
+    type: Annotated[str, Field(description='Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list, choice-list.')],
     position: Annotated[int, Field(description='Sort position within the template/item (lower first).')] = 0,
     visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    choice_list_id: Annotated[str | None, Field(description='Choice list UUID or IRI like /api/choice_lists/<uuid>. Required when type is choice-list.')] = None,
     dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
     """Create a field on a template (e.g. type checkbox, text, number, date).
@@ -1265,11 +1376,16 @@ def create_field(
     Args:
         template_id: Template UUID or IRI like /api/templates/<uuid>.
         name: Display name.
-        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.
+        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list, choice-list.
         position: Sort position within the template/item (lower first).
         visibility: Visibility value as used by Koillection, e.g. public or private.
+        choice_list_id: Choice list UUID or IRI like /api/choice_lists/<uuid>. Required when type is choice-list.
         dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
     """
+    if type == "choice-list" and not choice_list_id:
+        return dumps({"error": "ValidationError", "message": "choice_list_id is required when type is 'choice-list'."})
+    if type != "choice-list" and choice_list_id:
+        return dumps({"error": "ValidationError", "message": "choice_list_id is only valid when type is 'choice-list'."})
     payload = _clean(
         {
             "name": name,
@@ -1277,6 +1393,7 @@ def create_field(
             "type": type,
             "template": _iri(template_id, "templates"),
             "visibility": visibility,
+            "choiceList": _iri(choice_list_id, "choice_lists") if choice_list_id else None,
         }
     )
     if dry_run:
@@ -1292,6 +1409,7 @@ def create_field(
                 "type": created.get("type"),
                 "position": created.get("position"),
                 "template": created.get("template"),
+                "choiceList": created.get("choiceList"),
             },
         )
     except KoillectionError as exc:
@@ -1302,9 +1420,10 @@ def create_field(
 def update_field(
     field_id: Annotated[str, Field(description='Field UUID or IRI like /api/fields/<uuid>.')],
     name: Annotated[str | None, Field(description='Display name.')] = None,
-    type: Annotated[str | None, Field(description='Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.')] = None,
+    type: Annotated[str | None, Field(description='Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list, choice-list.')] = None,
     position: Annotated[int | None, Field(description='Sort position within the template/item (lower first).')] = None,
     visibility: Annotated[str | None, Field(description='Visibility value as used by Koillection, e.g. public or private.')] = None,
+    choice_list_id: Annotated[str | None, Field(description='Choice list UUID or IRI like /api/choice_lists/<uuid>. Required when the resulting type is choice-list (unless the field is already bound to a list).')] = None,
     dry_run: Annotated[bool, Field(description='Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.')] = True,
 ) -> str:
     """Update a template field (PUT read-modify-write).
@@ -1312,16 +1431,23 @@ def update_field(
     Args:
         field_id: Field UUID or IRI like /api/fields/<uuid>.
         name: Display name.
-        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list.
+        type: Field/data type, e.g. text, textarea, checkbox, number, date, rating, country, list, choice-list.
         position: Sort position within the template/item (lower first).
         visibility: Visibility value as used by Koillection, e.g. public or private.
+        choice_list_id: Choice list UUID or IRI like /api/choice_lists/<uuid>. Required when the resulting type is choice-list (unless the field is already bound to a list).
         dry_run: Preview only when true (default). Pass false only after the preview was shown and the user explicitly confirmed.
     """
     try:
         client = get_client()
         path = _id_or_iri(field_id, "fields")
         raw = client.get(path)
-        updates = _clean({"name": name, "type": type, "position": position, "visibility": visibility})
+        resulting_type = type if type is not None else raw.get("type")
+        if choice_list_id and resulting_type != "choice-list":
+            return dumps({"error": "ValidationError", "message": "choice_list_id is only valid when the resulting type is 'choice-list'."})
+        if resulting_type == "choice-list" and not choice_list_id and not raw.get("choiceList"):
+            return dumps({"error": "ValidationError", "message": "choice_list_id is required when the resulting type is 'choice-list'."})
+        updates = _clean({"name": name, "type": type, "position": position, "visibility": visibility,
+                          "choiceList": _iri(choice_list_id, "choice_lists") if choice_list_id else None})
         if not updates:
             return dumps({"error": "NoChanges", "message": "No updatable fields supplied."})
         payload = _put_payload(raw, _FIELD_WRITE_KEYS, updates)
@@ -1329,7 +1455,9 @@ def update_field(
             return _preview("update_field", "PUT", path, payload,
                             f"Update field '{raw.get('name')}' fields: {sorted(updates)}.")
         updated = client.put(path, payload)
-        return _applied("update_field", {"id": updated.get("id") or updated.get("@id"), "name": updated.get("name")})
+        return _applied("update_field", {"id": updated.get("id") or updated.get("@id"), "name": updated.get("name"),
+                                         "type": updated.get("type"), "position": updated.get("position"),
+                                         "choiceList": updated.get("choiceList")})
     except KoillectionError as exc:
         return _err(exc)
 
