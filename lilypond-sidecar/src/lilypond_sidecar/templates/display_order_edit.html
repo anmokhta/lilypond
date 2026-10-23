@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ parent.title }} — Display order{% endblock %}
+{% block content %}
+  <h1>{{ parent.title }}</h1>
+  <p class="muted">
+    Current children sort:
+    {% if sorting_property %}
+      <code>{{ sorting_property }}</code>
+    {% else %}
+      title (default)
+    {% endif %}
+  </p>
+  <p class="muted">Assign integers (10, 20, 30… leave gaps to insert later). Preview first — nothing is written until you confirm apply.</p>
+
+  <form method="post" action="/display-order/{{ parent_id }}/preview" class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Subcollection</th>
+          <th>Current</th>
+          <th>{{ label }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for child in children %}
+          <tr>
+            <td>{{ child.title }}</td>
+            <td class="muted">{{ child.display_order if child.display_order is not none else "—" }}</td>
+            <td>
+              <input type="number" name="order[{{ child.id }}]" value="{{ child.proposed_order }}" step="1" required>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3" class="muted">No children.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if children %}
+      <p style="margin-top: 1rem;">
+        <button type="submit">Preview writes</button>
+        <a class="btn secondary" href="/display-order">Back</a>
+      </p>
+    {% endif %}
+  </form>
+{% endblock %}

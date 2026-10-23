@@ -1,0 +1,47 @@
+# Example for Portainer / Compose on tertius.
+# Prefer joining the existing Koillection network. Do NOT expose the Docker socket.
+# Andrew must approve any stack change on tertius before deploying.
+#
+# Option A — sibling project that attaches to the existing network:
+#
+#   docker compose -f docker-compose.example.yml up -d
+#
+# Option B — paste the `lilypond-sidecar` service into the Koillection stack
+# and ensure `koillection_default` (or the stack's network name) is shared.
+
+services:
+  lilypond-sidecar:
+    build:
+      context: ..
+      dockerfile: lilypond-sidecar/Dockerfile
+    image: lilypond-sidecar:local
+    container_name: lilypond-sidecar
+    ports:
+      - "3121:3121"
+    environment:
+      # In-stack: use the Koillection service DNS name, not the LAN IP.
+      KOILLECTION_BASE_URL: http://koillection:80
+      KOILLECTION_USERNAME: anmokhta
+      KOILLECTION_PASSWORD: ${KOILLECTION_PASSWORD}
+      HOST: "0.0.0.0"
+      PORT: "3121"
+      LILYPOND_SIDECAR_LOG_FILE: /var/log/lilypond-sidecar/calls.jsonl
+    volumes:
+      - lilypond_sidecar_logs:/var/log/lilypond-sidecar
+    # Never: /var/run/docker.sock
+    networks:
+      - koillection_default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3121/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  lilypond_sidecar_logs:
+
+networks:
+  koillection_default:
+    external: true

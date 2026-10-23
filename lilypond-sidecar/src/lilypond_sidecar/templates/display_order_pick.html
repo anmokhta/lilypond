@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Pick collection — Display order{% endblock %}
+{% block content %}
+  <h1>Display order</h1>
+  <p class="muted">Choose a parent collection. The sidecar will set a <code>Display order</code> number on each child and point the parent’s children sort at that label (stock Koillection sorting).</p>
+
+  <div class="card">
+    <ul class="plain">
+      {% for c in collections %}
+        <li>
+          <a href="/display-order/{{ c.id }}">{{ c.title }}</a>
+          <span class="muted"> · {{ c.id }}</span>
+        </li>
+      {% else %}
+        <li class="muted">No top-level collections visible.</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endblock %}

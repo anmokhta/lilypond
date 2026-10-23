@@ -1,0 +1,25 @@
+[project]
+name = "lilypond-sidecar"
+version = "0.1.0"
+description = "Goal 1 Track B sidecar — Display-order helper (slice 0); AI Organizer/Importer later"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.12",
+    "python-dotenv>=1.2.4",
+    "httpx>=0.28.1",
+    "koillection-mcp",
+]
+
+[project.scripts]
+lilypond-sidecar = "lilypond_sidecar.app:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+koillection-mcp = { path = "../koillection-mcp", editable = true }

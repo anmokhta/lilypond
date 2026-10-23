@@ -6,13 +6,15 @@ Guidance for Claude Code in this repo. Shared, tool-agnostic guidance lives in [
 
 **lilypond**: tools for [Koillection](https://koillection.github.io/), Andrew's self-hosted collection manager on `tertius`. Started 2026-10-18. This is Goal 1 of a three-goal homelab MCP project (Goal 1 → review → Goal 2 fleet/manager → Goal 3 wireframe; goals are strictly sequenced).
 
-Current state (2026-10-20): a working Python MCP server in [`koillection-mcp/`](koillection-mcp/) — 28 tools: read-only discovery plus CRUD for collections/subcollections, items, item data, templates, fields, and tags. All writes are dry-run by default; every call is logged to a JSONL history. Next up: populating real collections. Track B (side client with embedded AI) has not started.
+Current state (2026-10-20): a working Python MCP server in [`koillection-mcp/`](koillection-mcp/) — 28 tools: read-only discovery plus CRUD for collections/subcollections, items, item data, templates, fields, and tags. All writes are dry-run by default; every call is logged to a JSONL history. Next up: populating real collections. Track B (Compose sidecar for AI Organizer/Importer; optional later fork) has not started — see [`goal-1-track-b.md`](goal-1-track-b.md).
 
 ## Read in this order
 
 1. [`AGENTS.md`](AGENTS.md) — project + MCP engineering standard (canonical)
-2. [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md) — active plan, phases, acceptance tests, findings
-3. [`koillection-mcp/README.md`](koillection-mcp/README.md) — tool table, dry-run contract, client wiring
+2. [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md) — Track A plan, phases, acceptance tests, findings
+3. [`goal-1-track-b.md`](goal-1-track-b.md) — Track B plan (when working on the sidecar or optional fork)
+4. [`lilypond-sidecar/README.md`](lilypond-sidecar/README.md) — Track B sidecar (slice 0+)
+5. [`koillection-mcp/README.md`](koillection-mcp/README.md) — tool table, dry-run contract, client wiring
 
 ## Claude-specific working rules
 

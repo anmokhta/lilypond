@@ -4,7 +4,7 @@ Status: Track A complete (36 tools, coins population live 2026-10-21); housekeep
 
 ## Objective
 
-Two tracks. Track A (primary): an MCP server that lets LLMs get data from and put data into Koillection, including helping set it up the way Andrew wants (collections, templates, fields, tags, visibility). Track B (secondary): a side client for Koillection with embedded AI that helps create new sections and categories and helps with bulk import. Track A comes first; the phases and tool list below are Track A.
+Two tracks. Track A (primary): an MCP server that lets LLMs get data from and put data into Koillection, including helping set it up the way Andrew wants (collections, templates, fields, tags, visibility). Track B (secondary): a **Compose sidecar** for AI Organizer/Importer (stock Koillection image unchanged); optional later fork only for native groups/list-grid toggle — full plan in [`goal-1-track-b.md`](goal-1-track-b.md). Decided 2026-10-22 (revised same day): sidecar-first. Track A comes first; the phases and tool list below are Track A.
 
 ## What we know (verified)
 
@@ -19,7 +19,7 @@ Two tracks. Track A (primary): an MCP server that lets LLMs get data from and pu
 
 **Product model** (from the wiki): collections work like folders and contain items; items carry metadata; tags group items across collections; there are wishlists, loan tracking, templates, fields, visibility settings, scraping and metrics pages.
 
-**Runtime on `tertius` (verified 2026-10-18 via SSH + laptop curl)**
+**Runtime on** `tertius` **(verified 2026-10-18 via SSH + laptop curl)**
 
 - Image: `koillection/koillection:latest` (FrankenPHP labels show image created 2026-08-06). Companion DB: `postgres:16` as container `koillection-db`.
 - Containers: `koillection` (healthy), `koillection-db`. Compose project name `koillection`; Portainer stack path was labeled `/data/compose/26/docker-compose.yml` (file not readable from SSH user without sudo).
@@ -83,7 +83,7 @@ After phase 5, we hold a short review (see the last section).
 4. Populate one entry per state with its data.
 5. Leave Andrew able to use Koillection to track what he has and what he still needs.
 
-**Test 2: the embedded AI client (Track B).** Andrew wants to test the AI identifying which coins he has and updating those listings from "want to own" to owned.
+**Test 2: AI via Track B sidecar.** Andrew wants to test the sidecar AI identifying which coins he has and updating those listings from "want to own" to owned (preview + confirm before write).
 
 **Open items these tests raise:**
 
@@ -96,7 +96,7 @@ After phase 5, we hold a short review (see the last section).
 
 ## Design implication: setup and import are separate (2026-10-18)
 
-Andrew will decide which fields to track during Test 1, not up front. So neither the MCP nor the embedded AI can assume a fixed set of fields. Both must also let Andrew set up collections for users and import items into them as two separate steps.
+Andrew will decide which fields to track during Test 1, not up front. So neither the MCP nor Track B's sidecar AI can assume a fixed set of fields. Both must also let Andrew set up collections for users and import items into them as two separate steps.
 
 **Two separate workflows, separate tools**
 
@@ -108,10 +108,10 @@ Andrew will decide which fields to track during Test 1, not up front. So neither
 - Import tools take the target collection as input and never hard-code field names.
 - Setup and import can each be called alone, in either order, and re-run later (for example, new items added to an old collection).
 - Re-running an import should not create duplicates. How to match existing items (by name, by a key field) is undecided.
-- Track B follows the same split: the AI proposes a structure, Andrew approves it, setup runs; separately, the AI proposes items, Andrew reviews, import runs.
+- Track B follows the same split in the sidecar: the AI Organizer proposes a structure, Andrew approves it, setup runs; separately, the AI Importer proposes items, Andrew reviews, import runs.
 - The fields Andrew keeps after Test 1 get saved as a reusable template, which becomes the starting point for Track B's suggestions.
 
-**"For users" raises an access question.** Koillection's API wiki says the API has no admin features and no access to other users' content, so every call acts as whoever logged in. Likely consequences, not yet verified: the side client must log in as each user, and user accounts cannot be created through the API. Open questions: how users sign in to the Track B client, and where their tokens are stored.
+**"For users" raises an access question.** Koillection's API wiki says the API has no admin features and no access to other users' content, so every call acts as whoever logged in. Track B v1 authenticates to the API as `anmokhta` (same as the MCP; decided 2026-10-22 sidecar-first). User accounts still cannot be created through the API.
 
 ## Questions for Andrew (start here)
 
@@ -145,7 +145,7 @@ Record these as we go; they feed the Goal 2 rebuild:
 - **Packaging/secrets:** one Python package + `uv` + stdio entry point was enough; no container needed for the MCP itself. Secrets live only in the gitignored `.env` (loaded from the project root), never in MCP client JSON — both client configs carry just the `uv --directory … run` command. Lesson for the fleet: per-server `.env` + spawn-from-config is a workable convention; a manager must never need secrets in its own config files.
 - **Transport reality:** stdio servers have no discoverable endpoint — Cursor/Claude spawn them from config with absolute paths, and a stale client session silently kept an 8-tool read-only snapshot for days while the server had grown to 36 tools. For Goal 2: `tools/list` is the only manifest, client reloads must be verified (tool count) not assumed, and streamable HTTP would make discovery/health checks real instead of inferred.
 - **Credential refresh:** JWT login + re-login on 401 inside the client worked invisibly throughout (5,110 logged calls, 2026-10-21–22). The failure mode was server-side, not client-side: Koillection's rotating `JWT_PASSPHRASE` vs. persisted keys broke API auth until keys were regenerated (2026-10-19). Permanent durability: `JWT_PASSPHRASE` pinned in the Portainer stack env (verified 2026-10-22 — present in container env after recreate; API auth 200; smoke green). The 2026-10-20 in-container entrypoint patch is no longer load-bearing and can be retired on the next image update. Lesson: for each fleet service, document where its auth secrets must be pinned so a container recreate cannot silently break API auth.
-- **Tool usage (from `logs/calls.jsonl`, 5,110 calls):** the workhorses were reads for iteration (`get_item` 1,774) and the item-data path (`set_item_data` 623, `delete_item_data` 575, `create_item` 270, image uploads 380 combined). Structure tools (`copy_template`, field/template/collection CRUD) were used in bursts during setup phases, exactly as the setup-vs-import split predicted. Never used so far: `whoami`, `list_tags` (tags remain unused in the data model). A fleet manager should expect this shape: a few hot data tools, bursty structure tools, and some tools that exist for completeness.
+- **Tool usage (from** `logs/calls.jsonl`**, 5,110 calls):** the workhorses were reads for iteration (`get_item` 1,774) and the item-data path (`set_item_data` 623, `delete_item_data` 575, `create_item` 270, image uploads 380 combined). Structure tools (`copy_template`, field/template/collection CRUD) were used in bursts during setup phases, exactly as the setup-vs-import split predicted. Never used so far: `whoami`, `list_tags` (tags remain unused in the data model). A fleet manager should expect this shape: a few hot data tools, bursty structure tools, and some tools that exist for completeness.
 - **What went wrong (all recovered):** JWT key incident (above); datum image uploads silently no-op with the wrong multipart field name (`file` vs `fileImage`); choice-list datum values must be JSON array strings (plain string 422s, empty = `[]`); item relations are not mirrored (set both directions); template field order and item datum order are independent (both must be written); `set_item_data` cannot re-position image data (raw read-modify-write PUT instead). Lesson: every one of these was found by a sandbox test or a verified read-back, not by trusting the OpenAPI schema — budget sandbox-first time per new API surface in the fleet.
 - **Safety guards that earned their keep:** dry-run-by-default caught no disasters but made every bulk preview reviewable; confirm-name deletes and the collection cascade preview are the guards that matter; DB backup before every structural phase (five taken, latest `koillection-20261022-221203.sql`) plus one full item-data snapshot made the template surgery reversible; the JSONL call history (payload-free, redacted) doubled as the audit trail and the usage data for this review. Keep all four as fleet conventions.
 - **Build time:** Goal 1 Track A went from scaffold to a verified 36-tool CRUD server plus a 112-item populated collection in four working days (2026-10-18 → 2026-10-22, part-time sessions), with the marginal cost per new capability dropping sharply after the tool/history/test harness existed (choice lists: one session including live rollout). Sizing for dozens of MCPs: the first is the expensive one; per-server cost is dominated by learning that API's quirks, not by MCP plumbing.
@@ -179,24 +179,9 @@ Record these as we go; they feed the Goal 2 rebuild:
 - **macOS note:** `mcp install` rewrites Claude Desktop `mcpServers`; prefer editing JSON to match Cursor’s `uv --directory` form so secrets are not embedded in the config file.
 - **Time so far:** phase 0 verify + phase 1 scaffold/read-only tools in one session; authenticated end-to-end smoke still needs `KOILLECTION_PASSWORD` in local `.env`.
 
-## Track B (secondary): side client with embedded AI
+## Track B (secondary)
 
-Added and clarified 2026-10-18 as the secondary track of Goal 1, started after the MCP works. Andrew wants an app or alternate page for Koillection with embedded AI that helps create new sections and categories and helps with mass or bulk import.
-
-This builds directly on Goal 1: phases 3 (shape the structure) and 4 (bulk import with preview) are the same capabilities, offered through a friendlier interface instead of a chat.
-
-**Research question to settle first:** should it be completely open-ended, or limited to specific domains such as trading cards, coins or comics? The trade-off, to be researched:
-
-- *Open-ended:* works for any collection, but the AI must infer templates and fields from scratch and has no trusted metadata source.
-- *Domain-limited:* can use domain-specific fields and external metadata sources for each domain, but each domain is separate work. Koillection itself has no built-in metadata download, so domain data would have to come from outside.
-
-**Other things to research later** (none looked into yet):
-
-- Which metadata sources exist for cards, coins and comics, and their terms of use.
-- Whether it should be a separate web app that calls Koillection's REST API, or something closer to Koillection itself (Koillection's own scraping feature is still being built).
-- How the AI is embedded and how its calls are paid for and secured.
-- Preview-and-approve flow for every AI-proposed change, since the AI would be writing to a real collection.
-- Whether the Goal 1 MCP can be reused as this app's tool layer.
+Moved 2026-10-22 to [`goal-1-track-b.md`](goal-1-track-b.md). Sidecar-first Compose service ([`lilypond-sidecar/`](lilypond-sidecar/)): slice 0 Display-order helper shipped locally 2026-10-22; AI Organizer/Importer next; optional later fork for native groups / list-grid toggle. Do not expand Track B here; edit that file.
 
 ## Sources
 

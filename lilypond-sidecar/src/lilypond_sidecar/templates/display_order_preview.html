@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Preview — Display order{% endblock %}
+{% block content %}
+  <h1>Preview (dry run)</h1>
+  <p class="muted">Parent: <strong>{{ preview.parent.title }}</strong>. No changes have been applied yet.</p>
+
+  <div class="card">
+    <h2>Parent write</h2>
+    <p><code>{{ preview.parent_write.method }} {{ preview.parent_write.path }}</code></p>
+    <p class="muted">
+      sortingProperty → <code>Display order</code>
+      (was {{ preview.parent.current_sortingProperty or "null" }})
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Child data writes ({{ preview.child_write_count }})</h2>
+    <table>
+      <thead>
+        <tr><th>Child</th><th>Mode</th><th>From</th><th>To</th><th>Call</th></tr>
+      </thead>
+      <tbody>
+        {% for w in preview.child_writes %}
+          <tr>
+            <td>{{ w.child_title }}</td>
+            <td>{{ w.mode }}</td>
+            <td class="muted">{{ w.from if w.from is not none else "—" }}</td>
+            <td>{{ w.to }}</td>
+            <td><code>{{ w.method }} {{ w.path }}</code></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <details class="card">
+    <summary>Full preview JSON</summary>
+    <pre>{{ preview_json }}</pre>
+  </details>
+
+  <form method="post" action="/display-order/{{ collection_id }}/apply" class="card">
+    {% for cid, value in orders.items() %}
+      <input type="hidden" name="order[{{ cid }}]" value="{{ value }}">
+    {% endfor %}
+    <p>Type <code>apply</code> to confirm, then submit. Apply rebuilds the same write plan server-side from these order values.</p>
+    <p>
+      <input type="text" name="confirm" placeholder="apply" required pattern="apply"
+             style="padding:0.35rem 0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;">
+    </p>
+    <button type="submit" class="danger">Apply to Koillection</button>
+    <a class="btn secondary" href="/display-order/{{ collection_id }}">Edit orders</a>
+  </form>
+{% endblock %}

@@ -7,7 +7,7 @@ lilypond is two tracks:
 | Track | What | Status |
 |---|---|---|
 | **A — MCP server** | Let LLMs read from and write to Koillection: collections, templates, fields, tags, items, setup | Primary — build first |
-| **B — Side client** | App or alternate page with embedded AI for creating sections/categories and bulk import | Secondary — after Track A works |
+| **B — Sidecar (+ optional fork)** | Compose sidecar for AI Organizer/Importer on stock Koillection; fork later only if native groups/list-grid toggle are needed | Slice 0 (Display-order helper) in [`lilypond-sidecar/`](lilypond-sidecar/); plan in [`goal-1-track-b.md`](goal-1-track-b.md) |
 
 **Status (2026-10-20):** Track A phases 1–2 done in [`koillection-mcp/`](koillection-mcp/) — read tools plus CRUD (dry-run by default) for collections/subcollections, items, item data, templates, fields, tags, with JSONL call history. Run `uv run python scripts/test_crud_sandbox.py` for the self-cleaning CRUD lifecycle test. Next: populate real collections; bulk import/scrapers and the MCP manager app are later plans.
 
@@ -52,7 +52,7 @@ Koillection is the pond. lilypond is the tooling that grows around it — MCP to
 
 **Test 1 (Track A):** Using only the MCP, an agent should view the existing Coins collection, create a "50 State Quarters" subcollection with fields (including owned yes/no), populate one entry per state, and leave the owner able to track have vs need in Koillection.
 
-**Test 2 (Track B):** AI identifies which coins are owned and updates listings from want → owned — with preview and confirmation before any write.
+**Test 2 (Track B):** Via the sidecar, AI identifies which coins are owned and updates listings from want → owned — with preview and confirmation before any write.
 
 Details and open items: [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md).
 
@@ -70,7 +70,9 @@ Details and open items: [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md)
 
 | File | Role |
 |---|---|
-| [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md) | **Active plan** — phases, tools, acceptance tests, Track B |
+| [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md) | **Active Track A plan** — phases, tools, acceptance tests, findings |
+| [`goal-1-track-b.md`](goal-1-track-b.md) | **Track B plan** — Compose sidecar (AI Organizer/Importer) + optional later fork |
+| [`lilypond-sidecar/README.md`](lilypond-sidecar/README.md) | Track B sidecar — slice 0 Display-order helper; Compose/Portainer notes |
 | [`homelab-mcp-summary.md`](homelab-mcp-summary.md) | Broader homelab MCP context (fleet, wireframe) — out of scope for lilypond proper |
 | [`goal-2-mcp-fleet-and-central-manager.md`](goal-2-mcp-fleet-and-central-manager.md) | Draft notes for a later fleet project |
 | [`goal-3-homelab-systems-wireframe.md`](goal-3-homelab-systems-wireframe.md) | Parked systems map |

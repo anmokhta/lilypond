@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Lilypond sidecar{% endblock %}
+{% block content %}
+  <h1>Track B sidecar</h1>
+  <p class="muted">Slice 0: Display-order helper for stock Koillection. AI Organizer/Importer come later.</p>
+
+  <div class="card">
+    <h2>Koillection connection</h2>
+    {% if health.ok %}
+      <p class="ok">Connected</p>
+    {% else %}
+      <p class="bad">Not fully healthy</p>
+    {% endif %}
+    <ul class="plain muted">
+      <li>Base URL: {{ health.base_url or "—" }}</li>
+      <li>API version: {{ health.api_version or "—" }}</li>
+      <li>Docs reachable: {{ health.docs_reachable }}</li>
+      <li>Authenticated: {{ health.authenticated }}</li>
+      {% if health.auth_error %}<li>Auth error: {{ health.auth_error }}</li>{% endif %}
+      {% if health.error %}<li>Error: {{ health.error }}</li>{% endif %}
+    </ul>
+  </div>
+
+  <p><a class="btn" href="/display-order">Set subcollection display order</a></p>
+{% endblock %}

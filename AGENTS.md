@@ -8,7 +8,7 @@ Canonical guidance for any AI agent working in this repo (Cursor, Claude Code, o
 
 | Goal | What | Status |
 |---|---|---|
-| 1 | Koillection MCP (Track A), then an embedded-AI side client (Track B) | Track A CRUD done (2026-10-20); population next; Track B not started |
+| 1 | Koillection MCP (Track A), then Track B (Compose sidecar: AI Organizer/Importer; optional later fork) | Track A CRUD done (2026-10-20); population next; Track B not started — see [`goal-1-track-b.md`](goal-1-track-b.md) |
 | 2 | MCP fleet + central manager (incl. a possible Mac manager app) | Draft only — plan gets rebuilt after Goal 1 |
 | 3 | Homelab systems wireframe | Parked |
 
@@ -18,7 +18,9 @@ Do not build Goal 2/3 work early. Goal 1 findings that feed Goal 2 go in the Goa
 
 | File | Role |
 |---|---|
-| [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md) | Active plan: phases, acceptance tests, verified facts, findings |
+| [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md) | Active Track A plan: phases, acceptance tests, verified facts, findings |
+| [`goal-1-track-b.md`](goal-1-track-b.md) | Track B plan: Compose sidecar (AI Organizer/Importer) + optional later Koillection fork |
+| [`lilypond-sidecar/README.md`](lilypond-sidecar/README.md) | Track B sidecar (slice 0: Display-order helper); Compose example on port 3121 |
 | [`koillection-mcp/README.md`](koillection-mcp/README.md) | Server README: tools, dry-run contract, call history, client wiring |
 | [`README.md`](README.md) | Repo overview and roadmap |
 | [`homelab-mcp-summary.md`](homelab-mcp-summary.md), [`goal-2-*.md`](goal-2-mcp-fleet-and-central-manager.md), [`goal-3-*.md`](goal-3-homelab-systems-wireframe.md) | Later goals; background only |

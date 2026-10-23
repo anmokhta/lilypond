@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Applied — Display order{% endblock %}
+{% block content %}
+  <h1>Applied</h1>
+  <div class="card">
+    <p class="ok">Display order updated for <strong>{{ result.parent.title }}</strong>.</p>
+    <ul class="plain muted">
+      <li>sortingProperty: {{ result.parent.sortingProperty }}</li>
+      <li>sortingType: {{ result.parent.sortingType }}</li>
+      <li>sortingDirection: {{ result.parent.sortingDirection }}</li>
+      <li>Children written: {{ result.children | length }}</li>
+    </ul>
+  </div>
+  <p class="muted">Open the collection in Koillection’s UI and confirm the grid/list order matches.</p>
+  <p>
+    <a class="btn" href="/display-order/{{ collection_id }}">Back to editor</a>
+    <a class="btn secondary" href="/">Home</a>
+  </p>
+{% endblock %}

@@ -4,7 +4,7 @@ Started 2026-10-18 · Owner: Andrew · Status: planning, nothing built yet
 
 ## The three goals
 
-1. **Koillection MCP.** Primary: an MCP server so LLMs can get data from and put data into Koillection, including helping set it up the way Andrew wants. Secondary: a side client for Koillection with embedded AI that creates sections and handles bulk import. Built iteratively until Andrew is happy.
+1. **Koillection MCP.** Primary: an MCP server so LLMs can get data from and put data into Koillection, including helping set it up the way Andrew wants. Secondary (Track B): a Compose sidecar for AI Organizer/Importer beside stock Koillection; optional later fork only if native UI chrome is required. Built iteratively until Andrew is happy.
 2. **MCP fleet + one control point.** Eventually an MCP for every Docker container on the homelab, plus an MCP for each system's Docker daemon, with one place to manage all of them.
 3. **Systems wireframe.** A map of every system and application in the homelab. Done after goals 1 and 2 are working, and possibly also written down in Koillection as text.
 
@@ -50,13 +50,14 @@ From MCP tooling research:
 
 ## Companion docs
 
-- Goal 1: Koillection MCP — Plan
-- Goal 2: MCP Fleet and Central Manager — Plan
-- Goal 3: Homelab Systems Wireframe — Plan
+- Goal 1 Track A: [`goal-1-koillection-mcp.md`](goal-1-koillection-mcp.md)
+- Goal 1 Track B: [`goal-1-track-b.md`](goal-1-track-b.md)
+- Goal 2: [`goal-2-mcp-fleet-and-central-manager.md`](goal-2-mcp-fleet-and-central-manager.md)
+- Goal 3: systems wireframe (parked; filename may vary)
 
-## Goal 1 secondary track (clarified 2026-10-18)
+## Goal 1 secondary track (clarified 2026-10-18; expanded 2026-10-22)
 
-After the MCP works: a side client (app or alternate page) for Koillection with embedded AI that helps create new sections and categories and helps with mass or bulk import. Open research question: fully open-ended, or limited to cards, coins or comics. Details are in the Goal 1 doc, under Track B.
+After the MCP works: Compose sidecar for AI Organizer/Importer (stock image unchanged); stock Display-order helper for sorting; fork later only for native groups / list-grid toggle (decided 2026-10-22, sidecar-first). Full plan: [`goal-1-track-b.md`](goal-1-track-b.md).
 
 ## Sources
 
